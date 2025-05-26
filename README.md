@@ -2,8 +2,6 @@
 
 # 🚀 Payload Hoster
 
-![Payload Hoster Logo](./github/logo.png)
-
 *A fast application to create and manage dynamic content and routes with an administration panel and a secure API*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -78,7 +76,7 @@ The application will be accessible at: [http://localhost:3000](http://localhost:
 
 ### 💻 Administration Interface
 
-![Admin Panel](./github/admin-panel.png)
+![Admin Panel](./.github/admin-panel.png)
 
 Access the administration interface at: [http://localhost:3000/manager/](http://localhost:3000/manager/)
 
@@ -92,7 +90,7 @@ The administration interface allows you to:
 - Check real-time logs
 - Manage application settings
 
-![Logs](./github/logs.png)
+![Logs](./.github/logs.png)
 
 ### 🔗 REST API
 
@@ -240,7 +238,7 @@ This command connects to the server via WebSocket and displays all incoming requ
 
 ### 📝 Creating a Route via the Web Interface
 
-![Create Route](./github/create-route.png)
+![Create Route](./.github/create-route.png)
 
 1. Log in to the administration interface
 2. Click on "New Route" in the menu
