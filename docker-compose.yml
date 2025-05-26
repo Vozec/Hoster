@@ -1,0 +1,89 @@
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    restart: always
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGODB_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD}
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB Admin Interface
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mongo-express
+    restart: always
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=${MONGODB_USER}
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=${MONGODB_PASSWORD}
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+      - ME_CONFIG_MONGODB_URL=mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@mongodb:27017/?authSource=admin
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  # Frontend Build Service
+  frontend-builder:
+    image: node:18
+    container_name: frontend-builder
+    working_dir: /app
+    environment:
+      - ADMIN_PATH=${ADMIN_PATH}
+      - API_PATH=${API_PATH}
+      - NODE_ENV=production
+      - CI=false
+    volumes:
+      - ./admin-frontend/src:/app/src
+      - ./admin-frontend/public:/app/public
+      - ./admin-frontend/package.json:/app/package.json
+      - ./admin-frontend/package-lock.json:/app/package-lock.json
+      - ./admin-frontend/docker-entrypoint.sh:/app/docker-entrypoint.sh
+      - ./admin-frontend/scripts:/app/scripts
+      - frontend_build:/app/build
+      - node_modules_cache:/app/node_modules
+    command: /app/docker-entrypoint.sh
+
+  # Service du backend
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: backend
+    working_dir: /app
+    ports:
+      - "${PORT}:3000"
+    volumes:
+      - ./src:/app/src
+      - ./package.json:/app/package.json
+      - ./package-lock.json:/app/package-lock.json
+      - ./init.js:/app/init.js
+      - ./docker-entrypoint.sh:/app/docker-entrypoint.sh
+      - ./.env:/app/.env
+      - frontend_build:/app/admin-frontend/build
+    environment:
+      - PORT=3000
+      - MONGODB_URI=mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@mongodb:27017/dynamic-routes?authSource=admin
+      - JWT_SECRET=votre_secret_jwt_tres_securise
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+    command: /app/docker-entrypoint.sh
+    depends_on:
+      - mongodb
+      - frontend-builder
+    restart: always
+
+
+volumes:
+  mongodb_data:
+    driver: local
+  frontend_build:
+    driver: local
+  node_modules_cache:
+    driver: local

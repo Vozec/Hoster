@@ -1,0 +1,607 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import os
+import sys
+import json
+import random
+import string
+import argparse
+import requests
+import configparser
+import time
+
+# Configuration file path
+CONFIG_FILE = os.path.expanduser("~/.payload_hoster.conf")
+
+# Content type mappings by extension
+CONTENT_TYPES = {
+    ".html": "text/html",
+    ".txt": "text/plain",
+    ".js": "application/javascript",
+    ".json": "application/json",
+    ".xml": "application/xml",
+    ".css": "text/css",
+    ".csv": "text/csv",
+    ".md": "text/markdown",
+    ".py": "text/x-python",
+    ".sh": "text/x-sh",
+    ".php": "application/x-httpd-php",
+    ".yaml": "application/x-yaml",
+    ".yml": "application/x-yaml"
+}
+
+# Content type shortcuts
+CONTENT_TYPE_SHORTCUTS = {
+    "html": "text/html",
+    "txt": "text/plain",
+    "text": "text/plain",
+    "plain": "text/plain",
+    "js": "application/javascript",
+    "javascript": "application/javascript",
+    "json": "application/json",
+    "xml": "application/xml",
+    "css": "text/css",
+    "csv": "text/csv",
+    "md": "text/markdown",
+    "markdown": "text/markdown",
+    "py": "text/x-python",
+    "python": "text/x-python",
+    "sh": "text/x-sh",
+    "bash": "text/x-sh",
+    "php": "application/x-httpd-php",
+    "yaml": "application/x-yaml",
+    "yml": "application/x-yaml"
+}
+
+# Default content type
+DEFAULT_CONTENT_TYPE = "text/plain"
+
+class PayloadHosterClient:
+    def __init__(self):
+        self.config = configparser.ConfigParser()
+        self.api_key = None
+        self.server_url = None
+        self.api_path = None
+        self.load_config()
+
+    def load_config(self):
+        """Load configuration from file if it exists"""
+        if os.path.exists(CONFIG_FILE):
+            self.config.read(CONFIG_FILE)
+            if 'DEFAULT' in self.config:
+                self.api_key = self.config['DEFAULT'].get('api_key')
+                self.server_url = self.config['DEFAULT'].get('server_url')
+                self.api_path = self.config['DEFAULT'].get('api_path', '/api/api')
+                
+                # Normalize URLs and paths
+                if self.server_url and self.server_url.endswith('/'):
+                    self.server_url = self.server_url[:-1]
+                    
+                if self.api_path and not self.api_path.startswith('/'):
+                    self.api_path = '/' + self.api_path
+                    
+                if self.api_path and self.api_path.endswith('/'):
+                    self.api_path = self.api_path[:-1]
+
+    def save_config(self):
+        """Save configuration to file"""
+        if 'DEFAULT' not in self.config:
+            self.config['DEFAULT'] = {}
+        
+        self.config['DEFAULT']['api_key'] = self.api_key
+        self.config['DEFAULT']['server_url'] = self.server_url
+        self.config['DEFAULT']['api_path'] = self.api_path
+        
+        os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+        with open(CONFIG_FILE, 'w') as configfile:
+            self.config.write(configfile)
+        
+        print(f"Configuration saved to {CONFIG_FILE}")
+
+    def setup(self, api_key, server_url, api_path=None):
+        """Set up the client with API key, server URL and API path"""
+        self.api_key = api_key
+        self.server_url = server_url
+        
+        # Normalize server URL
+        if self.server_url and self.server_url.endswith('/'):
+            self.server_url = self.server_url[:-1]
+        
+        # Extract API path from server URL if it contains a path
+        if api_path is None and '/' in self.server_url.replace('://', ''):
+            # Split the URL into base and path
+            parts = self.server_url.split('/')
+            if len(parts) > 3:  # More than just protocol and domain
+                base_url = '/'.join(parts[:3])  # protocol://domain
+                path = '/' + '/'.join(parts[3:])  # /path/to/api
+                self.server_url = base_url
+                # Make sure the path is just /api, not /api/v1 or anything else
+                if path == '/api':
+                    self.api_path = '/api/v1'
+                else:
+                    self.api_path = path
+            else:
+                self.api_path = '/api/v1'  # Default path
+        else:
+            # If API path is provided, use it, otherwise default to /api/v1
+            if api_path == '/api':
+                self.api_path = '/api/v1'
+            else:
+                self.api_path = api_path if api_path is not None else '/api/v1'
+        
+        # Normalize API path
+        if not self.api_path.startswith('/'):
+            self.api_path = '/' + self.api_path
+        if self.api_path.endswith('/'):
+            self.api_path = self.api_path[:-1]
+        
+        self.save_config()
+        
+        # Test connection
+        try:
+            response = self.make_request("GET", "/routes")
+            print(f"Connection successful! Found {len(response)} routes.")
+        except Exception as e:
+            print(f"Error connecting to server: {str(e)}")
+
+    def make_request(self, method, endpoint, data=None, files=None):
+        """Make an API request to the server"""
+        if not self.api_key or not self.server_url:
+            print("Error: Client not configured. Run 'client.py setup --key <key> --server <url>' first.")
+            sys.exit(1)
+        
+        # Make sure endpoint starts with a slash
+        if not endpoint.startswith('/'):
+            endpoint = '/' + endpoint
+        
+        # Determine the correct API path
+        api_path = self.api_path
+        
+        # If the API path doesn't already include /v1, add it
+        if not api_path.endswith('/v1') and not '/v1/' in api_path:
+            # If the path is /api, append /v1
+            if api_path == '/api':
+                api_path = '/api/v1'
+        
+        # Use the configured API path
+        url = f"{self.server_url}{api_path}{endpoint}"
+        headers = {"X-API-Key": self.api_key}
+        
+        try:
+            if method == "GET":
+                response = requests.get(url, headers=headers)
+            elif method == "POST":
+                response = requests.post(url, json=data, headers=headers)
+            elif method == "PUT":
+                response = requests.put(url, json=data, headers=headers)
+            elif method == "DELETE":
+                response = requests.delete(url, headers=headers)
+            else:
+                raise ValueError(f"Unsupported HTTP method: {method}")
+            
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            if hasattr(e.response, 'text'):
+                try:
+                    error_data = e.response.json()
+                    print(f"API Error: {error_data.get('message', str(e))}")
+                except:
+                    print(f"API Error: {e.response.text}")
+            else:
+                print(f"Request Error: {str(e)}")
+            sys.exit(1)
+
+    def get_content_type(self, file_path, forced_content_type=None):
+        """Determine content type based on file extension or forced value"""
+        if forced_content_type:
+            # Check if it's a shortcut or a full content type
+            if '/' in forced_content_type:
+                # It's already a full content type
+                return forced_content_type
+            else:
+                # Try to match the shortcut
+                shortcut = forced_content_type.lower()
+                if shortcut in CONTENT_TYPE_SHORTCUTS:
+                    return CONTENT_TYPE_SHORTCUTS[shortcut]
+                else:
+                    print(f"Warning: Unknown content type shortcut '{shortcut}'. Using default content type.")
+                    return DEFAULT_CONTENT_TYPE
+        
+        # Determine by file extension
+        file_ext = os.path.splitext(file_path)[1].lower()
+        return CONTENT_TYPES.get(file_ext, DEFAULT_CONTENT_TYPE)
+
+    def generate_random_path(self, length=8):
+        """Generate a random path string"""
+        chars = string.ascii_lowercase + string.digits
+        return ''.join(random.choice(chars) for _ in range(length))
+        
+    def get_next_route_number(self):
+        """Get the next incremental number for route naming"""
+        # Get existing routes
+        routes = self.make_request("GET", "/routes")
+        
+        # Start with 1 if no routes exist
+        if not routes:
+            return 1
+            
+        # Find the highest number used in existing route names
+        highest_num = 0
+        
+        for route in routes:
+            name = route.get('name', '')
+            # Look for names that end with _N where N is a number
+            if '_' in name:
+                try:
+                    num_part = name.split('_')[-1]
+                    num = int(num_part)
+                    if num > highest_num:
+                        highest_num = num
+                except ValueError:
+                    # Not a number, ignore
+                    pass
+        
+        # Return the next number in sequence
+        return highest_num + 1
+    
+    def upload_file(self, file_path, content_type=None, permanent=False):
+        """Upload a file to the server"""
+        if not os.path.exists(file_path):
+            print(f"Error: File not found: {file_path}")
+            sys.exit(1)
+        
+        # Determine content type
+        file_content_type = self.get_content_type(file_path, content_type)
+        
+        # Read file content
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            # Try binary mode for non-text files
+            try:
+                with open(file_path, 'rb') as f:
+                    content = f.read().decode('latin1')
+            except Exception as e:
+                print(f"Error reading file: {str(e)}")
+                sys.exit(1)
+        
+        # Create route name from filename (without extension)
+        file_name = os.path.basename(file_path)
+        base_name = os.path.splitext(file_name)[0]
+        
+        # Generate random path for the URL
+        random_path = self.generate_random_path()
+        
+        # Get next incremental number for the route name
+        next_number = self.get_next_route_number()
+        
+        # Create a unique route name for the database with number AFTER the name
+        route_name = f"{base_name}_{next_number}"
+        
+        # The path remains without the number suffix
+        route_path = f"/{random_path}/{base_name}"
+        
+        if permanent:
+            category = "classic"
+        else:
+            category = "temporary"
+        
+        # Prepare data
+        data = {
+            "name": route_name,
+            "path": route_path,
+            "contentType": file_content_type,
+            "content": content,
+            "category": category
+        }
+        
+        # Upload to server
+        response = self.make_request("POST", "/routes", data)
+        
+        # Print only the full URL to the route
+        full_url = f"{self.server_url}{route_path}"
+        print(full_url)
+        
+        return response
+
+    def list_routes(self):
+        """List all routes on the server"""
+        routes = self.make_request("GET", "/routes")
+        
+        if not routes:
+            print("No routes found.")
+            return
+        
+        print(f"Found {len(routes)} routes:")
+        print("-" * 100)
+        print(f"{'ID':<24} {'Name':<15} {'Path':<25} {'Type':<15} {'Content Type':<20}")
+        print("-" * 100)
+        
+        for route in routes:
+            # Determine if the route is temporary or permanent
+            route_type = route.get('category', 'classic')
+            if route_type == 'temporary':
+                type_display = "Temporary"
+            else:
+                type_display = "Permanent"
+                
+            print(f"{route['_id']:<24} {route['name'][:15]:<15} {route['path'][:25]:<25} {type_display:<15} {route['contentType']:<20}")
+
+    def find_route_by_name(self, route_name):
+        """Find a route by name and return its ID and info"""
+        routes = self.make_request("GET", "/routes")
+        
+        if not routes:
+            return None, None
+            
+        # Look for an exact match on the name field first (preferred)
+        for route in routes:
+            if route['name'] == route_name:
+                return route['_id'], route
+        
+        # If no exact match on name, try matching on path as a fallback
+        for route in routes:
+            if route['path'] == f"/{route_name}" or route['path'] == route_name:
+                return route['_id'], route
+                
+        return None, None
+        
+    def edit_route(self, route_name, new_content=None, content_file=None, new_name=None, new_category=None, new_content_type=None):
+        """Edit a route's properties (content, name, category, or content type)"""
+        # Check that at least one edit parameter is provided
+        if new_content is None and content_file is None and new_name is None and new_category is None and new_content_type is None:
+            print("Error: At least one of content, file, name, category, or content-type must be provided.")
+            return
+            
+        # Find the route by name
+        route_id, route_info = self.find_route_by_name(route_name)
+        
+        if not route_id:
+            print(f"Error: Route not found: {route_name}")
+            print("Use 'ls' command to see available routes.")
+            return
+            
+        # Get content from file if content_file is provided
+        content = new_content
+        if content_file:
+            try:
+                with open(content_file, 'r') as f:
+                    content = f.read()
+            except Exception as e:
+                print(f"Error reading file: {str(e)}")
+                return
+                
+        # Validate category if provided
+        if new_category and new_category not in ['temporary', 'permanent']:
+            print("Error: Category must be 'temporary' or 'permanent'.")
+            return
+            
+        # Validate content type if provided
+        if new_content_type:
+            # Check if it's a shortcut
+            if new_content_type in CONTENT_TYPE_SHORTCUTS:
+                new_content_type = CONTENT_TYPE_SHORTCUTS[new_content_type]
+            # Otherwise, assume it's a full MIME type
+                
+        # Prepare data for update
+        data = {}
+        if content is not None:
+            data["content"] = content
+        if new_name is not None:
+            data["name"] = new_name
+        if new_category is not None:
+            data["category"] = new_category
+        if new_content_type is not None:
+            data["contentType"] = new_content_type
+        
+        # Show what is being updated
+        updates = []
+        if content is not None:
+            updates.append("content")
+        if new_name is not None:
+            updates.append(f"name to '{new_name}'")
+        if new_category is not None:
+            updates.append(f"category to '{new_category}'")
+        if new_content_type is not None:
+            updates.append(f"content type to '{new_content_type}'")
+        
+        # Update the route
+        try:
+            self.make_request("PUT", f"/routes/{route_id}", data)
+            print(f"Route '{route_name}' updated successfully.")
+            if updates:
+                print(f"Updated: {', '.join(updates)}")
+        except Exception as e:
+            print(f"Error updating route: {str(e)}")
+            
+    def delete_route(self, route_name):
+        """Delete a route by name"""
+        route_id, route_info = self.find_route_by_name(route_name)
+        
+        if not route_id:
+            print(f"Error: Route not found: {route_name}")
+            print("Use 'ls' command to see available routes.")
+            return
+        
+        # Delete the route
+        response = self.make_request("DELETE", f"/routes/{route_id}")
+        
+        if response and response.get('success', True):  # Assume success if no explicit failure
+            print(f"Route '{route_name}' deleted successfully.")
+        else:
+            error_msg = response.get('message', 'Unknown error') if response else 'Failed to delete route'
+            print(f"Error: {error_msg}")
+            
+    def watch_logs(self):
+        """Display logs in real-time using HTTP polling"""
+        if not self.server_url:
+            print("Error: Client not configured. Run 'client.py setup --key <key> --server <url>' first.")
+            sys.exit(1)
+            
+        print("Watching logs in real-time...")
+        print("Press Ctrl+C to stop watching logs.")
+        print("-" * 80)
+        
+        try:
+            # Get initial logs
+            last_timestamp = None
+            while True:
+                # Get logs from server
+                logs = self.make_request("GET", "/logs")
+                
+                # Ensure logs is in the correct format
+                if isinstance(logs, str):
+                    try:
+                        logs = json.loads(logs)
+                    except json.JSONDecodeError:
+                        print(f"Error: Invalid logs format received from server")
+                        time.sleep(2)
+                        continue
+                
+                # If logs is a dictionary with a 'logs' key, extract the logs
+                if isinstance(logs, dict) and 'logs' in logs:
+                    logs = logs.get('logs', [])
+                
+                # If logs is still not a list, try to extract logs from other common keys
+                if isinstance(logs, dict):
+                    for key in ['data', 'items', 'results', 'records']:
+                        if key in logs and isinstance(logs[key], list):
+                            logs = logs[key]
+                            break
+                
+                # If logs is still not a list, print error and continue
+                if not isinstance(logs, list):
+                    print(f"Error: Could not extract logs from response: {logs}")
+                    time.sleep(2)
+                    continue
+                
+                if logs:
+                    # Filter out non-dictionary items
+                    logs = [log for log in logs if isinstance(log, dict)]
+                    
+                    # Sort logs by timestamp (if available)
+                    logs.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+                    
+                    # Display only new logs
+                    new_logs = []
+                    for log in logs:
+                        timestamp = log.get('timestamp', '')
+                        if last_timestamp is None or timestamp > last_timestamp:
+                            new_logs.append(log)
+                    
+                    if new_logs:
+                        # Update last timestamp
+                        last_timestamp = new_logs[0].get('timestamp', '')
+                        
+                        # Display new logs in reverse order (oldest first)
+                        for log in reversed(new_logs):
+                            # Get raw request
+                            raw_request = log.get('rawRequest', 'No raw request available')
+                            timestamp = log.get('timestamp', 'Unknown time')
+                            ip = log.get('ip', 'Unknown IP')
+                            method = log.get('method', 'GET')
+                            path = log.get('path', '/')
+                            
+                            # Print raw request with timestamp
+                            print(f"\n\033[1m[{timestamp}] {ip} - {method} {path}\033[0m")
+                            print("-" * 80)
+                            print(raw_request)
+                            print("-" * 80)
+                
+                # Wait before polling again
+                time.sleep(1)
+                
+        except KeyboardInterrupt:
+            print("\nLog watching stopped.")
+        except Exception as e:
+            print(f"\nError watching logs: {str(e)}")
+            print("Make sure the server is running and the API is accessible.")
+                
+    def get_route_url(self, route_name):
+        """Get the full URL for a route"""
+        route_id, route_info = self.find_route_by_name(route_name)
+        
+        if not route_id:
+            print(f"Error: Route not found: {route_name}")
+            print("Use 'ls' command to see available routes.")
+            return
+            
+        # Extract the base URL without any API path
+        base_url = self.server_url
+        if '/api' in base_url:
+            base_url = base_url.split('/api')[0]
+            
+        # Get the route path and construct the full URL
+        route_path = route_info['path']
+        full_url = f"{base_url}{route_path}"
+        
+        # Just print the URL, nothing else
+        print(full_url)
+
+def main():
+    parser = argparse.ArgumentParser(description="Payload Hoster Client")
+    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
+    
+    # Setup command
+    setup_parser = subparsers.add_parser("setup", help="Configure the client")
+    setup_parser.add_argument("--key", required=True, help="API key for authentication")
+    setup_parser.add_argument("--server", required=True, help="Server URL (e.g., http://localhost:3000)")
+    setup_parser.add_argument("--api-path", help="API path (e.g., /api or /api/api). If not specified, it will be extracted from the server URL if present.")
+    
+    # Upload command
+    upload_parser = subparsers.add_parser("up", help="Upload a file")
+    upload_parser.add_argument("file", help="File to upload")
+    upload_parser.add_argument("--content-type", "--ct", help="Force content type (can be a shortcut like 'html', 'js', or full type like 'text/plain')")
+    upload_parser.add_argument("--permanent", action="store_true", help="Create a permanent route instead of a temporary one")
+    
+    # List command
+    list_parser = subparsers.add_parser("ls", help="List all routes")
+    
+    # Delete command
+    delete_parser = subparsers.add_parser("rm", help="Delete a route")
+    delete_parser.add_argument("route", help="Route name to delete")
+    
+    # La commande stats a été supprimée à la demande de l'utilisateur
+    
+    # Edit command
+    edit_parser = subparsers.add_parser("edit", help="Edit a route")
+    edit_parser.add_argument("route", help="Route name to edit")
+    edit_parser.add_argument("-c", "--content", help="New content for the route")
+    edit_parser.add_argument("-f", "--file", help="File containing new content for the route")
+    edit_parser.add_argument("-n", "--name", help="New name for the route")
+    edit_parser.add_argument("--category", choices=["temporary", "permanent"], help="New category for the route (temporary or permanent)")
+    edit_parser.add_argument("--content-type", "--ct", help="New content type for the route")
+    
+    # URL command
+    url_parser = subparsers.add_parser("url", help="Get the full URL for a route")
+    url_parser.add_argument("route", help="Route name to get URL for")
+    
+    # Logs command
+    logs_parser = subparsers.add_parser("logs", help="Watch access logs in real-time")
+    
+    args = parser.parse_args()
+    client = PayloadHosterClient()
+    
+    if args.command == "setup":
+        client.setup(args.key, args.server, args.api_path)
+    elif args.command == "up":
+        client.upload_file(args.file, args.content_type, args.permanent)
+    elif args.command == "ls":
+        client.list_routes()
+    elif args.command == "rm":
+        client.delete_route(args.route)
+    # La commande stats a été supprimée à la demande de l'utilisateur
+    elif args.command == "edit":
+        client.edit_route(args.route, args.content, args.file, args.name, args.category, args.content_type)
+    elif args.command == "url":
+        client.get_route_url(args.route)
+    elif args.command == "logs":
+        client.watch_logs()
+    else:
+        parser.print_help()
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,26 @@
+{
+    "name": "payload-hoster",
+    "version": "1.0.0",
+    "description": "Application for creating and managing dynamic routes with a secure admin panel",
+    "main": "src/app.js",
+    "scripts": {
+      "start": "node src/app.js",
+      "dev": "nodemon src/app.js",
+      "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "dependencies": {
+      "axios": "^1.4.0",
+      "bcryptjs": "^2.4.3",
+      "cors": "^2.8.5",
+      "dotenv": "^16.0.3",
+      "express": "^4.18.2",
+      "get-port": "^6.1.2",
+      "jsonwebtoken": "^9.0.0",
+      "mongoose": "^7.0.3",
+      "morgan": "^1.10.0",
+      "socket.io": "^4.6.1"
+    },
+    "devDependencies": {
+      "nodemon": "^2.0.22"
+    }
+  }
