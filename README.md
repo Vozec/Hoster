@@ -70,7 +70,7 @@ API_KEY=payload_hoster_secret_api_key_2025
 docker-compose --env-file .env up --build
 ```
 
-The application will be accessible at: [http://localhost:3000](http://localhost:3000)
+The application will be accessible at: [http://localhost:3000/manager](http://localhost:3000/manager)
 
 ## 💯 Usage
 
