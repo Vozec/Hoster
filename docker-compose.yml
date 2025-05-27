@@ -15,20 +15,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # MongoDB Admin Interface
-  mongo-express:
-    image: mongo-express:latest
-    container_name: mongo-express
-    restart: always
-    environment:
-      - ME_CONFIG_MONGODB_ADMINUSERNAME=${MONGODB_USER}
-      - ME_CONFIG_MONGODB_ADMINPASSWORD=${MONGODB_PASSWORD}
-      - ME_CONFIG_MONGODB_SERVER=mongodb
-      - ME_CONFIG_MONGODB_URL=mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@mongodb:27017/?authSource=admin
-    depends_on:
-      mongodb:
-        condition: service_healthy
-
   # Frontend Build Service
   frontend-builder:
     image: node:18
