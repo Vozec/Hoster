@@ -33,6 +33,11 @@ const RouteSchema = new mongoose.Schema({
   updatedAt: {
     type: Date,
     default: Date.now
+  },
+  // Date à laquelle la route est devenue temporaire
+  temporarySince: {
+    type: Date,
+    default: null
   }
 });
 

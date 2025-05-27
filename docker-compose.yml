@@ -37,6 +37,7 @@ services:
     environment:
       - ADMIN_PATH=${ADMIN_PATH}
       - API_PATH=${API_PATH}
+      - HOSTER_URL=${HOSTER_URL}
       - NODE_ENV=production
       - CI=false
     volumes:
@@ -70,7 +71,7 @@ services:
     environment:
       - PORT=3000
       - MONGODB_URI=mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@mongodb:27017/dynamic-routes?authSource=admin
-      - JWT_SECRET=votre_secret_jwt_tres_securise
+      - JWT_SECRET=${JWT_SECRET}
       - ADMIN_USERNAME=${ADMIN_USERNAME}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
     command: /app/docker-entrypoint.sh
@@ -78,7 +79,6 @@ services:
       - mongodb
       - frontend-builder
     restart: always
-
 
 volumes:
   mongodb_data:

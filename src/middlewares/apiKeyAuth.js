@@ -15,7 +15,11 @@ const apiKeyAuth = (req, res, next) => {
   }
   
   // Check if API key is valid
-  if (apiKey !== process.env.API_KEY) {
+  const allowedApiKeys = process.env.API_KEY
+    ? process.env.API_KEY.split(',').map(key => key.trim())
+    : [];
+
+  if (!allowedApiKeys.includes(apiKey)) {
     return res.status(403).json({ 
       success: false, 
       message: 'Invalid API key' 

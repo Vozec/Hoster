@@ -1,6 +1,6 @@
 FROM node:18
 
-# Install PHP and required extensions
+# Install PHP, cron and required extensions
 RUN apt-get update && apt-get install -y \
     php-cli \
     php-fpm \
@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     php-curl \
     php-json \
     php-xml \
+    cron \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -22,6 +23,9 @@ RUN npm install
 
 # Copy the rest of the application
 COPY . .
+
+# Make scripts executable
+RUN chmod +x /app/docker-entrypoint.sh /app/src/scripts/*.sh
 
 # Expose port
 EXPOSE 3000

@@ -51,6 +51,9 @@ Créez un fichier `.env` à la racine du projet avec les paramètres suivants :
 ```env
 # Configuration du serveur
 PORT=3000
+HOSTER_URL=http://localhost:3000
+JWT_SECRET=vozec_secret_jwt_tres_securise
+TEMPORARY_DELAY=7 # Days
 
 # Configuration de MongoDB
 MONGODB_USER=admin
@@ -63,7 +66,7 @@ ADMIN_PATH=/manager/
 
 # Configuration de l'API
 API_PATH=/api
-API_KEY=payload_hoster_secret_api_key_2025
+API_KEY=first_api_key,second_api_key
 ```
 
 3. **Démarrer l'application**
@@ -100,7 +103,7 @@ Vous pouvez accéder à l'API de manière programmatique en utilisant la clé AP
 
 ```bash
 curl -X GET http://localhost:3000/api/v1/routes \
-  -H "X-API-Key: payload_hoster_secret_api_key_2025"
+  -H "X-API-Key: first_api_key"
 ```
 
 #### Points d'accès API disponibles
@@ -153,7 +156,7 @@ sudo ln -s ./hoster /usr/local/bin/hoster
 Configurez le CLI avec votre clé API et l'URL du serveur :
 
 ```bash
-hoster setup --key "payload_hoster_secret_api_key_2025" --server "http://localhost:3000/api"
+hoster setup --key "first_api_key" --server "http://localhost:3000/api"
 ```
 
 #### Téléversement de fichiers

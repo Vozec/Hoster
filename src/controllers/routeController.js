@@ -32,12 +32,16 @@ const createRoute = async (req, res) => {
     }
 
     // Créer la nouvelle route
+    // Initialiser temporarySince si la route est temporaire
+    const now = new Date();
+    const isTemporary = (category || 'classic') === 'temporary';
     const newRoute = new Route({
       path,
       name,
       contentType,
       content,
-      category: category || 'classic'
+      category: category || 'classic',
+      temporarySince: isTemporary ? now : null
     });
 
     await newRoute.save();
@@ -114,9 +118,22 @@ const updateRoute = async (req, res) => {
       }
     }
     
+    // Récupérer l'ancienne route pour comparer les catégories
+    const oldRoute = await Route.findById(req.params.id);
+    let updateFields = { path, name, contentType, content, category, updatedAt: Date.now() };
+    if (oldRoute) {
+      // Passage de classic à temporary
+      if (oldRoute.category === 'classic' && category === 'temporary') {
+        updateFields.temporarySince = new Date();
+      }
+      // Passage de temporary à classic
+      else if (oldRoute.category === 'temporary' && category === 'classic') {
+        updateFields.temporarySince = null;
+      }
+    }
     const updatedRoute = await Route.findByIdAndUpdate(
       req.params.id,
-      { path, name, contentType, content, category, updatedAt: Date.now() },
+      updateFields,
       { new: true, runValidators: true }
     );
     

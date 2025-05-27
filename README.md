@@ -51,6 +51,9 @@ Create a `.env` file at the root of the project with the following parameters:
 ```env
 # Server configuration
 PORT=3000
+HOSTER_URL=http://localhost:3000
+JWT_SECRET=vozec_secret_jwt_tres_securise
+TEMPORARY_DELAY=7 # Days
 
 # MongoDB configuration
 MONGODB_USER=admin
@@ -63,7 +66,7 @@ ADMIN_PATH=/manager/
 
 # API configuration
 API_PATH=/api
-API_KEY=payload_hoster_secret_api_key_2025
+API_KEY=first_api_key,second_api_key 
 ```
 
 3. **Start the application**
@@ -100,7 +103,7 @@ You can access the API programmatically using the API key defined in the `.env` 
 
 ```bash
 curl -X GET http://localhost:3000/api/v1/routes \
-  -H "X-API-Key: payload_hoster_secret_api_key_2025"
+  -H "X-API-Key: first_api_key"
 ```
 
 #### Available API Endpoints
@@ -153,7 +156,7 @@ sudo ln -s ./hoster /usr/local/bin/hoster
 Configure the CLI with your API key and server URL:
 
 ```bash
-hoster setup --key "payload_hoster_secret_api_key_2025" --server "http://localhost:3000/api"
+hoster setup --key "first_api_key" --server "http://localhost:3000/api"
 ```
 
 #### File Uploading
