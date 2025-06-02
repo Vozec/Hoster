@@ -246,8 +246,57 @@ class PayloadHosterClient:
         # Return the next number in sequence
         return highest_num + 1
     
+    def upload_content(self, content, content_type=None, permanent=False):
+        """Upload content directly to the server"""
+        # Default content type for direct content
+        if content_type is None:
+            content_type = DEFAULT_CONTENT_TYPE
+        else:
+            # Convert shortcut to full content type if needed
+            if content_type in CONTENT_TYPE_SHORTCUTS:
+                content_type = CONTENT_TYPE_SHORTCUTS[content_type]
+        
+        # Generate a base name for the route
+        base_name = "content"
+        
+        # Generate random path for the URL
+        random_path = self.generate_random_path()
+        
+        # Get next incremental number for the route name
+        next_number = self.get_next_route_number()
+        
+        # Create a unique route name for the database with number AFTER the name
+        route_name = f"{base_name}_{next_number}"
+        
+        # The path remains without the number suffix
+        route_path = f"/{random_path}/{base_name}"
+        
+        if permanent:
+            category = "classic"
+        else:
+            category = "temporary"
+        
+        # Prepare data
+        data = {
+            "name": route_name,
+            "path": route_path,
+            "contentType": content_type,
+            "content": content,
+            "category": category
+        }
+        
+        # Upload to server
+        response = self.make_request("POST", "/routes", data)
+        
+        # Print only the full URL to the route
+        full_url = f"{self.server_url}{route_path}"
+        print(full_url)
+        
+        return response
+
     def upload_file(self, file_path, content_type=None, permanent=False):
         """Upload a file to the server"""
+        
         if not os.path.exists(file_path):
             print(f"Error: File not found: {file_path}")
             sys.exit(1)
@@ -552,8 +601,10 @@ def main():
     setup_parser.add_argument("--api-path", help="API path (e.g., /api or /api/api). If not specified, it will be extracted from the server URL if present.")
     
     # Upload command
-    upload_parser = subparsers.add_parser("up", help="Upload a file")
-    upload_parser.add_argument("file", help="File to upload")
+    upload_parser = subparsers.add_parser("up", help="Upload a file or content")
+    upload_parser.add_argument("file", nargs='?', help="File to upload")
+    upload_parser.add_argument("-c", "--content", help="Content to upload directly from command line")
+    upload_parser.add_argument("--stdin", action="store_true", help="Read content from standard input")
     upload_parser.add_argument("--content-type", "--ct", help="Force content type (can be a shortcut like 'html', 'js', or full type like 'text/plain')")
     upload_parser.add_argument("--permanent", action="store_true", help="Create a permanent route instead of a temporary one")
     
@@ -588,7 +639,19 @@ def main():
     if args.command == "setup":
         client.setup(args.key, args.server, args.api_path)
     elif args.command == "up":
-        client.upload_file(args.file, args.content_type, args.permanent)
+        if args.stdin:
+            # Read from standard input
+            content = sys.stdin.read()
+            client.upload_content(content, args.content_type, args.permanent)
+        elif args.content:
+            # Upload content directly from command line
+            client.upload_content(args.content, args.content_type, args.permanent)
+        elif args.file:
+            # Upload from file
+            client.upload_file(args.file, args.content_type, args.permanent)
+        else:
+            print("Error: You must provide either a file, content with -c, or use --stdin")
+            sys.exit(1)
     elif args.command == "ls":
         client.list_routes()
     elif args.command == "rm":
