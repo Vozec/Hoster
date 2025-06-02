@@ -202,7 +202,7 @@ async function evaluatePhp(phpCode, req, res) {
       // Ne pas utiliser params car nous avons déjà ajouté les paramètres à l'URL
       maxRedirects: 0, // Ne pas suivre les redirections automatiquement
       validateStatus: () => true, // Accepter tous les codes de statut
-      timeout: 10000, // Timeout de 10 secondes
+      timeout: 60000, // Timeout de 60 secondes
     });
     
     console.log(`Réponse du serveur PHP: ${response.status}`);

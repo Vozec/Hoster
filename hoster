@@ -246,7 +246,7 @@ class PayloadHosterClient:
         # Return the next number in sequence
         return highest_num + 1
     
-    def upload_content(self, content, content_type=None, permanent=False):
+    def upload_content(self, content, content_type=None, permanent=False, custom_path=None):
         """Upload content directly to the server"""
         # Default content type for direct content
         if content_type is None:
@@ -259,17 +259,23 @@ class PayloadHosterClient:
         # Generate a base name for the route
         base_name = "content"
         
-        # Generate random path for the URL
-        random_path = self.generate_random_path()
-        
         # Get next incremental number for the route name
         next_number = self.get_next_route_number()
         
         # Create a unique route name for the database with number AFTER the name
         route_name = f"{base_name}_{next_number}"
         
-        # The path remains without the number suffix
-        route_path = f"/{random_path}/{base_name}"
+        # Use custom path if provided, otherwise generate a random one
+        if custom_path:
+            # Ensure path starts with /
+            if not custom_path.startswith('/'):
+                custom_path = '/' + custom_path
+            route_path = custom_path
+        else:
+            # Generate random path for the URL
+            random_path = self.generate_random_path()
+            # The path remains without the number suffix
+            route_path = f"/{random_path}/{base_name}"
         
         if permanent:
             category = "classic"
@@ -294,7 +300,7 @@ class PayloadHosterClient:
         
         return response
 
-    def upload_file(self, file_path, content_type=None, permanent=False):
+    def upload_file(self, file_path, content_type=None, permanent=False, custom_path=None):
         """Upload a file to the server"""
         
         if not os.path.exists(file_path):
@@ -321,17 +327,23 @@ class PayloadHosterClient:
         file_name = os.path.basename(file_path)
         base_name = os.path.splitext(file_name)[0]
         
-        # Generate random path for the URL
-        random_path = self.generate_random_path()
-        
         # Get next incremental number for the route name
         next_number = self.get_next_route_number()
         
         # Create a unique route name for the database with number AFTER the name
         route_name = f"{base_name}_{next_number}"
         
-        # The path remains without the number suffix
-        route_path = f"/{random_path}/{base_name}"
+        # Use custom path if provided, otherwise generate a random one
+        if custom_path:
+            # Ensure path starts with /
+            if not custom_path.startswith('/'):
+                custom_path = '/' + custom_path
+            route_path = custom_path
+        else:
+            # Generate random path for the URL
+            random_path = self.generate_random_path()
+            # The path remains without the number suffix
+            route_path = f"/{random_path}/{base_name}"
         
         if permanent:
             category = "classic"
@@ -398,11 +410,11 @@ class PayloadHosterClient:
                 
         return None, None
         
-    def edit_route(self, route_name, new_content=None, content_file=None, new_name=None, new_category=None, new_content_type=None):
+    def edit_route(self, route_name, new_content=None, content_file=None, new_name=None, new_category=None, new_content_type=None, new_path=None):
         """Edit a route's properties (content, name, category, or content type)"""
         # Check that at least one edit parameter is provided
-        if new_content is None and content_file is None and new_name is None and new_category is None and new_content_type is None:
-            print("Error: At least one of content, file, name, category, or content-type must be provided.")
+        if new_content is None and content_file is None and new_name is None and new_category is None and new_content_type is None and new_path is None:
+            print("Error: At least one of content, file, name, category, path, or content-type must be provided.")
             return
             
         # Find the route by name
@@ -445,6 +457,11 @@ class PayloadHosterClient:
             data["category"] = new_category
         if new_content_type is not None:
             data["contentType"] = new_content_type
+        if new_path is not None:
+            # Ensure path starts with /
+            if not new_path.startswith('/'):
+                new_path = '/' + new_path
+            data["path"] = new_path
         
         # Show what is being updated
         updates = []
@@ -456,6 +473,8 @@ class PayloadHosterClient:
             updates.append(f"category to '{new_category}'")
         if new_content_type is not None:
             updates.append(f"content type to '{new_content_type}'")
+        if new_path is not None:
+            updates.append(f"path to '{new_path}'")
         
         # Update the route
         try:
@@ -607,6 +626,7 @@ def main():
     upload_parser.add_argument("--stdin", action="store_true", help="Read content from standard input")
     upload_parser.add_argument("--content-type", "--ct", help="Force content type (can be a shortcut like 'html', 'js', or full type like 'text/plain')")
     upload_parser.add_argument("--permanent", action="store_true", help="Create a permanent route instead of a temporary one")
+    upload_parser.add_argument("--path", help="Custom path for the route (e.g., /my-custom-path)")
     
     # List command
     list_parser = subparsers.add_parser("ls", help="List all routes")
@@ -625,6 +645,7 @@ def main():
     edit_parser.add_argument("-n", "--name", help="New name for the route")
     edit_parser.add_argument("--category", choices=["temporary", "permanent"], help="New category for the route (temporary or permanent)")
     edit_parser.add_argument("--content-type", "--ct", help="New content type for the route")
+    edit_parser.add_argument("--path", help="New custom path for the route (e.g., /my-custom-path)")
     
     # URL command
     url_parser = subparsers.add_parser("url", help="Get the full URL for a route")
@@ -642,13 +663,13 @@ def main():
         if args.stdin:
             # Read from standard input
             content = sys.stdin.read()
-            client.upload_content(content, args.content_type, args.permanent)
+            client.upload_content(content, args.content_type, args.permanent, args.path)
         elif args.content:
             # Upload content directly from command line
-            client.upload_content(args.content, args.content_type, args.permanent)
+            client.upload_content(args.content, args.content_type, args.permanent, args.path)
         elif args.file:
             # Upload from file
-            client.upload_file(args.file, args.content_type, args.permanent)
+            client.upload_file(args.file, args.content_type, args.permanent, args.path)
         else:
             print("Error: You must provide either a file, content with -c, or use --stdin")
             sys.exit(1)
@@ -658,7 +679,7 @@ def main():
         client.delete_route(args.route)
     # La commande stats a été supprimée à la demande de l'utilisateur
     elif args.command == "edit":
-        client.edit_route(args.route, args.content, args.file, args.name, args.category, args.content_type)
+        client.edit_route(args.route, args.content, args.file, args.name, args.category, args.content_type, args.path)
     elif args.command == "url":
         client.get_route_url(args.route)
     elif args.command == "logs":
