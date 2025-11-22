@@ -32,7 +32,8 @@ const formatRawRequest = (req) => {
 const logRouteAccess = async (req, res, next) => {
   try {
     // Get the corresponding route
-    const path = req.originalUrl;
+    // Extract base path without query parameters
+    const path = req.originalUrl.split('?')[0];
     const route = await Route.findOne({ path });
     
     if (route) {
