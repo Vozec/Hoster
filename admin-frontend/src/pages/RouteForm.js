@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import Editor from 'react-simple-code-editor';
+import { highlight, languages } from 'prismjs';
+import 'prismjs/components/prism-markup';
+import 'prismjs/components/prism-markup-templating';
+import 'prismjs/components/prism-clike';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/themes/prism-okaidia.css';
 import { 
   Typography, TextField, Button, Box, Paper, 
   FormControl, InputLabel, Select, MenuItem, 
@@ -340,72 +347,77 @@ const RouteForm = ({ onSuccess, isPopup }) => {
                 
                 <Grid item xs={12}>
                   {formData.contentType === 'text/html' ? (
-                    <Box sx={{ 
-                      border: '1px solid rgba(255, 255, 255, 0.23)', 
-                      borderRadius: '8px',
-                      overflow: 'hidden',
-                      position: 'relative'
-                    }}>
+                    <Box>
                       <Box sx={{ 
-                        p: 1, 
-                        bgcolor: 'rgba(255, 255, 255, 0.09)', 
-                        borderBottom: '1px solid rgba(255, 255, 255, 0.23)',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center'
+                        border: '1px solid rgba(255, 255, 255, 0.23)', 
+                        borderRadius: '8px',
+                        overflow: 'hidden'
                       }}>
-                        <Typography variant="body2" color="text.secondary">
-                          HTML Content
-                        </Typography>
-                        <Chip 
-                          label="HTML" 
-                          size="small" 
-                          color="primary" 
-                          icon={<CodeIcon />} 
-                        />
-                      </Box>
-                      <SyntaxHighlighter 
-                        language="html" 
-                        style={atomDark}
-                        customStyle={{
-                          margin: 0,
-                          borderRadius: 0,
-                          maxHeight: '400px',
-                          minHeight: '400px'
-                        }}
-                        lineProps={{ style: { wordBreak: 'break-all', whiteSpace: 'pre-wrap' } }}
-                        wrapLines={true}
-                      >
-                        {formData.content}
-                      </SyntaxHighlighter>
-                      <TextField
-                        name="content"
-                        value={formData.content}
-                        onChange={handleChange}
-                        fullWidth
-                        required
-                        multiline
-                        rows={15}
-                        disabled={loading}
-                        variant="outlined"
-                        sx={{ 
-                          position: 'absolute', 
-                          top: 0, 
-                          left: 0, 
-                          right: 0,
-                          bottom: 0,
-                          opacity: 0,
-                          zIndex: 1
-                        }}
-                        InputProps={{
-                          sx: { 
-                            height: '100%',
-                            '& .MuiOutlinedInput-notchedOutline': {
-                              border: 'none'
-                            }
+                        <Box sx={{ 
+                          p: 1, 
+                          bgcolor: 'rgba(255, 255, 255, 0.09)', 
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.23)',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}>
+                          <Typography variant="body2" color="text.secondary">
+                            HTML Content
+                          </Typography>
+                          <Chip 
+                            label="HTML" 
+                            size="small" 
+                            color="primary" 
+                            icon={<CodeIcon />} 
+                          />
+                        </Box>
+                        <Box sx={{ 
+                          bgcolor: '#272822',
+                          '& textarea': {
+                            outline: 'none !important'
+                          },
+                          '& .token.tag': {
+                            color: '#f92672 !important'
+                          },
+                          '& .token.attr-name': {
+                            color: '#a6e22e !important'
+                          },
+                          '& .token.attr-value': {
+                            color: '#e6db74 !important'
+                          },
+                          '& .token.punctuation': {
+                            color: '#f8f8f2 !important'
+                          },
+                          '& .token.script': {
+                            color: '#66d9ef !important'
                           }
-                        }}
-                      />
+                        }}>
+                          <Editor
+                            value={formData.content}
+                            onValueChange={(code) => handleChange({ target: { name: 'content', value: code } })}
+                            highlight={(code) => {
+                              try {
+                                return highlight(code, languages.markup, 'markup');
+                              } catch (e) {
+                                return code;
+                              }
+                            }}
+                            padding={16}
+                            disabled={loading}
+                            placeholder="<html>&#10;  <body>&#10;    <h1>Hello World</h1>&#10;  </body>&#10;</html>"
+                            style={{
+                              fontFamily: '"Fira Code", Consolas, Monaco, "Courier New", monospace',
+                              fontSize: '14px',
+                              lineHeight: '1.6',
+                              minHeight: '400px',
+                              backgroundColor: '#272822',
+                              color: '#f8f8f2',
+                              caretColor: '#f8f8f0'
+                            }}
+                            textareaClassName="code-editor-textarea"
+                          />
+                        </Box>
+                      </Box>
                       <FormHelperText sx={{ px: 2, py: 1 }}>
                         The HTML content to be served when this route is accessed
                       </FormHelperText>

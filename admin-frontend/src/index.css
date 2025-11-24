@@ -15,10 +15,7 @@ code {
 .content-preview {
   max-height: 200px;
   overflow-y: auto;
-  border: 1px solid #ddd;
-  padding: 10px;
   border-radius: 4px;
-  background-color: #f5f5f5;
   margin-top: 10px;
 }
 

@@ -22,7 +22,7 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 import SyntaxHighlighter from 'react-syntax-highlighter';
-import { docco } from 'react-syntax-highlighter/dist/esm/styles/hljs';
+import { atomOneDark } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 import socketService from '../services/socketService';
 import { useAuth } from '../contexts/AuthContext';
 import config from '../config';
@@ -139,7 +139,7 @@ const RouteDetails = () => {
     switch (route.contentType) {
       case 'text/html':
         return (
-          <SyntaxHighlighter language="html" style={docco}>
+          <SyntaxHighlighter language="html" style={atomOneDark}>
             {route.content}
           </SyntaxHighlighter>
         );
@@ -147,26 +147,26 @@ const RouteDetails = () => {
         try {
           const formattedJson = JSON.stringify(JSON.parse(route.content), null, 2);
           return (
-            <SyntaxHighlighter language="json" style={docco}>
+            <SyntaxHighlighter language="json" style={atomOneDark}>
               {formattedJson}
             </SyntaxHighlighter>
           );
         } catch (e) {
           return (
-            <SyntaxHighlighter language="json" style={docco}>
+            <SyntaxHighlighter language="json" style={atomOneDark}>
               {route.content}
             </SyntaxHighlighter>
           );
         }
       case 'application/xml':
         return (
-          <SyntaxHighlighter language="xml" style={docco}>
+          <SyntaxHighlighter language="xml" style={atomOneDark}>
             {route.content}
           </SyntaxHighlighter>
         );
       default:
         return (
-          <SyntaxHighlighter language="text" style={docco}>
+          <SyntaxHighlighter language="text" style={atomOneDark}>
             {route.content}
           </SyntaxHighlighter>
         );
@@ -461,9 +461,14 @@ const RouteDetails = () => {
                   mt: 2,
                   maxHeight: '400px',
                   overflowY: 'auto',
-                  border: '1px solid #eee',
                   borderRadius: '8px',
-                  bgcolor: '#f8f8f8'
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+                  overflow: 'hidden',
+                  '& pre': {
+                    margin: '0 !important',
+                    borderRadius: '8px !important'
+                  }
                 }}>
                   {getContentPreview()}
                 </Box>
@@ -569,7 +574,7 @@ const RouteDetails = () => {
                           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
                             Request Parameters:
                           </Typography>
-                          <SyntaxHighlighter language="json" style={docco}>
+                          <SyntaxHighlighter language="json" style={atomOneDark}>
                             {JSON.stringify(log.query, null, 2)}
                           </SyntaxHighlighter>
                         </Box>
@@ -580,7 +585,7 @@ const RouteDetails = () => {
                           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
                             Request Body:
                           </Typography>
-                          <SyntaxHighlighter language="json" style={docco}>
+                          <SyntaxHighlighter language="json" style={atomOneDark}>
                             {JSON.stringify(log.body, null, 2)}
                           </SyntaxHighlighter>
                         </Box>
