@@ -46,8 +46,8 @@ app.use(API_PATH, indexRoutes);
 app.use(`${API_PATH}/admin`, authenticateToken, adminRoutes);
 app.use(`${API_PATH}/v1`, apiRoutes);
 
-app.use(ADMIN_PATH, express.static(path.join(__dirname, '../admin-frontend/build')));
-app.use(ADMIN_PATH.slice(0, -1), express.static(path.join(__dirname, '../admin-frontend/build')));
+app.use(ADMIN_PATH, express.static(path.join(__dirname, '../../frontend/build')));
+app.use(ADMIN_PATH.slice(0, -1), express.static(path.join(__dirname, '../../frontend/build')));
 
 app.use(async (req, res, next) => {
   try {
@@ -56,7 +56,7 @@ app.use(async (req, res, next) => {
     if (requestPath.startsWith(API_PATH)) return next();
 
     if (requestPath.startsWith(ADMIN_PATH) || requestPath === ADMIN_PATH.slice(0, -1)) {
-      const indexPath = path.join(__dirname, '../admin-frontend/build', 'index.html');
+      const indexPath = path.join(__dirname, '../../frontend/build', 'index.html');
       if (requestPath === ADMIN_PATH || requestPath === ADMIN_PATH.slice(0, -1)) {
         return res.redirect(`${ADMIN_PATH}#/login`);
       }

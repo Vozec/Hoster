@@ -5,7 +5,7 @@ all: build up
 
 # Build the React frontend locally (faster than in Docker)
 build:
-	cd admin-frontend && npm run build
+	cd frontend && npm run build
 
 # Start the Docker stack
 up:

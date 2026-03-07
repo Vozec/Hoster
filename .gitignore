@@ -1,4 +1,5 @@
 .claude/
 node_modules/
-admin-frontend/node_modules/
-admin-frontend/build/
+frontend/node_modules/
+frontend/build/
+.env

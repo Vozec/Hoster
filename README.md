@@ -82,7 +82,7 @@ make rebuild     # clean volumes, build frontend, start stack
 Or without Make:
 
 ```bash
-cd admin-frontend && npm run build
+cd frontend && npm run build
 docker-compose --env-file .env up --build
 ```
 
@@ -271,40 +271,6 @@ eval "$(hoster completion --shell bash)"
 # zsh
 eval "$(hoster completion --shell zsh)"
 ```
-
----
-
-## Architecture
-
-```
-payload-hoster/
-├── src/
-│   ├── controllers/         # routeController.js, adminController.js
-│   ├── middlewares/         # auth, apiKeyAuth, logger
-│   ├── models/              # Route, AccessLog, Config
-│   ├── routes/              # admin, apiRoutes, dynamic
-│   ├── services/            # WebSocket (Socket.IO)
-│   ├── utils/               # phpEvaluator, pathUtils
-│   └── app.js
-├── admin-frontend/
-│   └── src/
-│       ├── components/
-│       ├── contexts/
-│       ├── pages/           # Dashboard, RoutesList, RouteForm, RouteDetails, Settings
-│       └── utils/           # tagColors.js, contentTypes.js
-├── hoster                   # Python CLI
-├── Makefile
-├── docker-compose.yml
-└── .env
-```
-
-## Security
-
-- JWT sessions for the admin panel
-- bcrypt password hashing
-- `X-API-Key` header authentication for the REST API
-- Search input escaped before use in MongoDB `$regex` (ReDoS prevention)
-- AES-256-CBC encryption for route exports
 
 ---
 

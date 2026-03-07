@@ -27,12 +27,12 @@ services:
       - NODE_ENV=production
       - CI=false
     volumes:
-      - ./admin-frontend/src:/app/src
-      - ./admin-frontend/public:/app/public
-      - ./admin-frontend/package.json:/app/package.json
-      - ./admin-frontend/package-lock.json:/app/package-lock.json
-      - ./admin-frontend/docker-entrypoint.sh:/app/docker-entrypoint.sh
-      - ./admin-frontend/scripts:/app/scripts
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/package.json:/app/package.json
+      - ./frontend/package-lock.json:/app/package-lock.json
+      - ./frontend/docker-entrypoint.sh:/app/docker-entrypoint.sh
+      - ./frontend/scripts:/app/scripts
       - frontend_build:/app/build
       - node_modules_cache:/app/node_modules
     command: /app/docker-entrypoint.sh
@@ -41,26 +41,26 @@ services:
   backend:
     build:
       context: .
-      dockerfile: Dockerfile.backend
+      dockerfile: backend/Dockerfile
     container_name: backend
     working_dir: /app
     ports:
       - "${PORT}:3000"
     volumes:
-      - ./src:/app/src
-      - ./package.json:/app/package.json
-      - ./package-lock.json:/app/package-lock.json
-      - ./init.js:/app/init.js
-      - ./docker-entrypoint.sh:/app/docker-entrypoint.sh
+      - ./backend/src:/app/backend/src
+      - ./backend/init.js:/app/backend/init.js
+      - ./backend/docker-entrypoint.sh:/app/backend/docker-entrypoint.sh
+      - ./backend/package.json:/app/package.json
+      - ./backend/package-lock.json:/app/package-lock.json
       - ./.env:/app/.env
-      - frontend_build:/app/admin-frontend/build
+      - frontend_build:/app/frontend/build
     environment:
       - PORT=3000
       - MONGODB_URI=mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@mongodb:27017/dynamic-routes?authSource=admin
       - JWT_SECRET=${JWT_SECRET}
       - ADMIN_USERNAME=${ADMIN_USERNAME}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-    command: /app/docker-entrypoint.sh
+    command: /app/backend/docker-entrypoint.sh
     depends_on:
       - mongodb
       - frontend-builder

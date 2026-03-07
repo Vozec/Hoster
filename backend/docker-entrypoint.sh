@@ -13,7 +13,7 @@ fi
 
 # Configurer la tâche cron pour la purge automatique
 echo "Configuring automatic cleanup job..."
-CRON_JOB="0 3 * * * root /app/src/scripts/purgeTemporaryRoutes.js"
+CRON_JOB="0 3 * * * root /app/backend/src/scripts/purgeTemporaryRoutes.js"
 # Écraser le crontab avec notre tâche
 echo "$CRON_JOB" > /etc/crontab
 # Démarrer cron en arrière-plan
@@ -27,13 +27,13 @@ else
 fi
 
 echo "Waiting for frontend build to complete..."
-until [ -f /app/admin-frontend/build/.build_complete ]; do
+until [ -f /app/frontend/build/.build_complete ]; do
   echo "Frontend build not ready yet, waiting..."
   sleep 5
 done
 
 echo "Frontend build detected, initializing database..."
-node init.js
+node backend/init.js
 
 echo "Starting backend server..."
 npm start
