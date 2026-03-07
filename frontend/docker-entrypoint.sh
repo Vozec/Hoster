@@ -32,5 +32,4 @@ ls -la /app/frontend/build
 
 touch /app/frontend/build/.build_complete
 
-echo "Build process finished, keeping container alive..."
-tail -f /dev/null
+echo "Build process finished"
