@@ -20,16 +20,16 @@ export GENERATE_SOURCEMAP="true"
 export DISABLE_ESLINT_PLUGIN="true"
 export CI="false"
 
-mkdir -p /app/frontend/build
-find /app/frontend/build -mindepth 1 -delete || true
+mkdir -p /app/build
+find /app/build -mindepth 1 -delete || true
 
 echo "Running npm run build..."
 NODE_ENV=production npm run build
 
 echo "Frontend build completed"
 echo "Contenu du dossier build:"
-ls -la /app/frontend/build
+ls -la /app/build
 
-touch /app/frontend/build/.build_complete
+touch /app/build/.build_complete
 
 echo "Build process finished"
