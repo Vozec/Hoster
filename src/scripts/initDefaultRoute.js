@@ -11,17 +11,15 @@ async function initDefaultRoute() {
       useUnifiedTopology: true,
     });
 
-    // Vérifier si la route par défaut existe déjà
     const existingRoute = await Route.findOne({ path: '/' });
-    
+
     if (!existingRoute) {
-      // Créer la route par défaut
       const defaultRoute = new Route({
         path: '/',
         name: 'Default Route',
         contentType: 'application/javascript',
         content: 'alert(window.origin);',
-        category: 'classic'
+        category: 'classic',
       });
 
       await defaultRoute.save();
@@ -37,4 +35,4 @@ async function initDefaultRoute() {
   }
 }
 
-initDefaultRoute(); 
+initDefaultRoute();

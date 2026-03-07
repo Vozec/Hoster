@@ -1,346 +1,315 @@
 <div align="center">
 
-# 🚀 Payload Hoster
+# Payload Hoster
 
-*A fast application to create and manage dynamic content and routes with an administration panel and a secure API*
+*Create and serve dynamic routes with a web admin panel, REST API, and CLI*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com/)
-[![Node.js](https://img.shields.io/badge/Node.js-14.x-339933?logo=node.js)](https://nodejs.org/)
-[![React](https://img.shields.io/badge/React-17.x-61DAFB?logo=react)](https://reactjs.org/)
-[![MongoDB](https://img.shields.io/badge/MongoDB-4.x-47A248?logo=mongodb)](https://www.mongodb.com/)
+[![Node.js](https://img.shields.io/badge/Node.js-18.x-339933?logo=node.js)](https://nodejs.org/)
+[![React](https://img.shields.io/badge/React-18.x-61DAFB?logo=react)](https://reactjs.org/)
+[![MongoDB](https://img.shields.io/badge/MongoDB-6.x-47A248?logo=mongodb)](https://www.mongodb.com/)
 
 </div>
 
-## ✨ Features
+---
 
-- 🌐 **Dynamic Routing** - Create routes with different content types (HTML, JSON, JS, PHP, text, XML)
-- 🔒 **Secure Administration** - Authentication-protected admin interface
-- 🌳 **Flexible Hierarchy** - Support for routes with multiple levels of depth (/xxx, /xxx/yyy, /xx/yy/zz)
-- 📊 **Dashboard** - Visualization of all routes and statistics
-- 📝 **Access Logging** - Access logs for each route
-- 🔄 **Complete Management** - Modification and deletion of routes
-- ⚡ **Real-time** - Real-time logs with WebSocket
-- 🔌 **REST API** - Complete API for integration with other services
-- 🐍 **Python CLI** - Command-line interface for easy management
-- 🐘 **PHP Support** - PHP code evaluation for dynamic content
+## Features
 
-## 💻 Installation
+- **Dynamic routing** — serve any content type (HTML, JSON, JS, PHP, XML, binary files)
+- **Default root route** — `/` returns `It Works` out of the box, editable at any time
+- **File upload mode** — upload binary files served as raw bytes with optional `Content-Disposition`
+- **Image preview** — images are rendered inline in the route detail view
+- **CodeMirror editor** — syntax highlighting and line numbers for text content
+- **Tags** — tag routes and filter by tag in the UI and CLI
+- **Sort and pagination** — sort routes by date, path or name; 20 routes per page
+- **Rate limiting** — configurable per-route request rate limit (max requests / window)
+- **Dashboard** — stat cards and 7-day request activity chart
+- **Grid and list view** — toggle between card grid and compact list in the Routes page
+- **Real-time logs** — per-route access logs streamed over WebSocket with auto-reconnect
+- **Log search and export** — filter logs by IP/content/method, export as JSON or CSV
+- **Log TTL** — access logs are automatically pruned after 90 days
+- **CORS control** — global config in Settings with per-route override
+- **Custom response headers** — global defaults in Settings, overridable per route
+- **Export / Import** — backup and restore routes as JSON, with optional AES-256 encryption
+- **Clone routes** — duplicate any route to a chosen path or a random one
+- **QR code** — generate and download a QR code for any route URL
+- **Route test dialog** — send live test requests from the UI
+- **REST API** — full API at `/api/v1/` authenticated with an API key
+- **Python CLI** — feature-complete CLI with an interactive TUI mode and shell completion
+- **PHP support** — evaluate PHP code for dynamic responses
+- **JWT-protected admin** — session-based authentication for the admin panel
+
+---
+
+## Installation
 
 ### Prerequisites
 
 - [Docker](https://www.docker.com/) and [Docker Compose](https://docs.docker.com/compose/)
-- [Git](https://git-scm.com/) (for repository cloning)
-- [Python 3.6+](https://www.python.org/) (for CLI usage)
+- [Python 3.8+](https://www.python.org/) for the CLI
 
-### Installation Steps
-
-1. **Clone the repository**
+### Setup
 
 ```bash
 git clone https://github.com/vozec/payload-hoster.git
 cd payload-hoster
 ```
 
-2. **Configure environment variables**
-
-Create a `.env` file at the root of the project with the following parameters:
+Create a `.env` file at the root:
 
 ```env
-# Server configuration
 PORT=3000
 HOSTER_URL=http://localhost:3000
-JWT_SECRET=vozec_secret_jwt_tres_securise
-TEMPORARY_DELAY=7 # Days
+JWT_SECRET=change_me
+TEMPORARY_DELAY=7
 
-# MongoDB configuration
 MONGODB_USER=admin
 MONGODB_PASSWORD=password
 
-# Administration configuration
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
 ADMIN_PATH=/manager/
 
-# API configuration
 API_PATH=/api
-API_KEY=first_api_key,second_api_key 
+API_KEY=first_api_key,second_api_key
 ```
 
-3. **Start the application**
+```bash
+make rebuild     # clean volumes, build frontend, start stack
+```
+
+Or without Make:
 
 ```bash
+cd admin-frontend && npm run build
 docker-compose --env-file .env up --build
 ```
 
-The application will be accessible at: [http://localhost:3000/manager](http://localhost:3000/manager)
+The admin panel will be at `http://localhost:3000/manager`.
 
-## 💯 Usage
+| Make target | Description |
+|---|---|
+| `make rebuild` | Full reset: wipe all volumes (including DB), rebuild frontend, restart |
+| `make build` | Rebuild the React frontend only |
+| `make up` | Start the Docker stack |
+| `make clean` | Remove frontend volumes, keep MongoDB data |
+| `make clean-all` | Remove all volumes including MongoDB |
+| `make logs` | Tail all service logs (`service=backend` to filter) |
 
-### 💻 Administration Interface
+---
 
-![Admin Panel](./.github/admin-panel.png)
+## Admin Panel
 
-Access the administration interface at: [http://localhost:3000/manager/](http://localhost:3000/manager/)
+![Dashboard](./.github/dashboard.png)
 
-Log in with the credentials defined in the `.env` file:
-- Username: `admin` (default)
-- Password: `admin123` (default)
+Log in with the credentials from your `.env`. The landing page (Dashboard or Routes) is configurable in Settings > Preferences.
 
-The administration interface allows you to:
-- Create, modify, and delete routes
-- View access statistics
-- Check real-time logs
-- Manage application settings
+![Routes](./.github/admin-panel.png)
+
+The Routes page supports grid/list view, sorting, full-text search, and tag/category filters. Click any card to open the detail view. Actions (copy URL, test, edit, clone, delete) are available on each card without navigating away. Click the route name or path in the detail view to copy the full URL to the clipboard.
+
+### Creating a route
+
+![New Route](./.github/create-route.png)
+
+| Field | Description |
+|---|---|
+| Path | Route path (e.g. `/my-route`). Leave empty to auto-generate a random slug. |
+| Name | Auto-generated from path if empty. |
+| Category | Classic (permanent) or Temporary. |
+| Content Type | HTML, JSON, JS, PHP, XML, plain text, or any custom MIME type. |
+| Content Encoding | `Text` — type in the editor. `Base64`/`Hex` — type raw encoded data, server decodes before serving. `File` — upload a binary file served as-is. |
+| Tags | Press Enter after each tag. |
+| CORS Override | Per-route CORS headers, overrides global settings. |
+| Custom Headers | Additional response headers for this route only. |
+| Content-Disposition | For file mode: `inline`, `attachment`, or custom value. |
+| Rate Limit | Optional per-route request throttling (max requests / window in seconds). |
+
+### Route details and logs
 
 ![Logs](./.github/logs.png)
 
-### 🔗 REST API
+Click any route to see its metadata and access logs. The log tab streams new requests in real time over WebSocket (with reconnect indicator). Logs can be filtered by IP, content, or HTTP method, and exported as JSON or CSV. The QR code and single-route export buttons are in the header. Click the content preview to jump to the edit page.
 
-You can access the API programmatically using the API key defined in the `.env` file. Include the API key in your requests using the `X-API-Key` header:
+### Settings
+
+| Tab | Description |
+|---|---|
+| CORS | Global `Allow-Origin`, `Allow-Methods`, `Allow-Headers` |
+| Response Headers | Default headers sent on every dynamic route response |
+| Preferences | Landing page after login |
+
+---
+
+## REST API
+
+Include your API key in every request:
 
 ```bash
-curl -X GET http://localhost:3000/api/v1/routes \
+curl http://localhost:3000/api/v1/routes \
   -H "X-API-Key: first_api_key"
 ```
 
-#### Available API Endpoints
-
 | Method | Endpoint | Description |
-|---------|--------------|-------------|
+|--------|----------|-------------|
 | GET | `/api/v1/routes` | List all routes |
-| GET | `/api/v1/routes/:id` | Retrieve a specific route |
-| POST | `/api/v1/routes` | Create a new route |
+| GET | `/api/v1/routes/:id` | Get a route |
+| POST | `/api/v1/routes` | Create a route |
 | PUT | `/api/v1/routes/:id` | Update a route |
 | DELETE | `/api/v1/routes/:id` | Delete a route |
-| GET | `/api/v1/stats` | Retrieve system statistics |
-| GET | `/api/v1/logs` | Retrieve access logs |
+| POST | `/api/v1/routes/:id/clone` | Clone a route |
+| GET | `/api/v1/stats` | System statistics |
+| GET | `/api/v1/logs` | Recent access logs |
 
-### 🐍 Command Line Interface (CLI)
+---
 
-Payload Hoster comes with a Python CLI to facilitate file uploading and route management.
+## CLI
 
-```bash
-$ hoster
-usage: hoster [-h] {setup,up,ls,rm,edit,url,logs} ...
-
-Payload Hoster Client
-
-positional arguments:
-  {setup,up,ls,rm,edit,url,logs}
-                        Command to execute
-    setup               Configure the client
-    up                  Upload a file
-    ls                  List all routes
-    rm                  Delete a route
-    edit                Edit a route
-    url                 Get the full URL for a route
-    logs                Watch access logs in real-time
-
-options:
-  -h, --help            show this help message and exit
-```
-
-#### CLI Installation
+### Installation
 
 ```bash
 pip install -r requirements.txt
 chmod +x ./hoster
-sudo ln -s ./hoster /usr/local/bin/hoster
-```
-
-#### Configuration
-
-Configure the CLI with your API key and server URL:
-
-```bash
+sudo ln -s "$(pwd)/hoster" /usr/local/bin/hoster
 hoster setup --key "first_api_key" --server "http://localhost:3000/api"
 ```
 
-#### File Uploading
-
-**Upload a file** (creates a temporary route with a random path):
+### Interactive TUI
 
 ```bash
-hoster up example.html
-# Output: http://localhost:3000/a1b2c3d4/example
+hoster ui
 ```
 
-**Upload a permanent file** (also uses a random path):
+Full menu-driven interface for all operations, powered by `questionary` and `rich`. Also triggered by running `hoster` with no arguments in an interactive terminal.
+
+### Commands
+
+**Upload**
 
 ```bash
-hoster up example.html --permanent
-# Output: http://localhost:3000/e5f6g7h8/example
+hoster up payload.html                          # text file
+hoster up image.png --file-mode                 # binary file, served raw
+hoster up report.pdf --file-mode --disposition "attachment; filename=report.pdf"
+hoster up data.json --path /api/data --ct json
+hoster up script.js --permanent                 # permanent route (default: temporary)
+hoster up page.html --tags xss,demo
+hoster up page.html -H "X-Frame-Options: DENY"  # custom response header
+hoster up binary.bin --base64                   # store as base64, server decodes
+hoster up live.html --watch                     # re-upload on every file change
 ```
 
-Each route receives a unique name with an incremental numeric suffix (e.g., `example_1`, `example_2`) to avoid name collisions.
-
-The difference between temporary and permanent routes lies in their storage category, which affects how they are managed by the server.
-
-**Specify the content type**:
+**List and manage**
 
 ```bash
-# Use a shortcut
-hoster up data.txt --ct json
+hoster ls                          # all routes
+hoster ls --tag xss
+hoster ls --category temporary
 
-# Or specify the full MIME type
-hoster up data.txt --content-type application/json
-
-# Upload PHP code
-hoster up script.php --ct php
+hoster rm <name>                   # delete
+hoster clone <name>                # clone to a random path
+hoster clone <name> --path /copy   # clone to a specific path
+hoster open <name>                 # open URL in default browser
+hoster url <name>                  # print URL
+hoster test <name>                 # send a test request
 ```
 
-#### Route Management
-
-**List all routes**:
+**Edit**
 
 ```bash
-hoster ls
+hoster edit myroute -c "new content"
+hoster edit myroute -f file.html
+hoster edit myroute -n "new name"
+hoster edit myroute --ct json
+hoster edit myroute --category classic
 ```
 
-**Delete a route by name**:
+**Tags**
 
 ```bash
-hoster rm example_1
+hoster tag myroute xss demo
+hoster untag myroute demo
 ```
 
-**Modify route properties**:
+**CORS**
 
 ```bash
-# Modify content directly
-hoster edit example_1 -c "New content"
-
-# Modify content from a file
-hoster edit example_1 -f new_content.txt
-
-# Change the name
-hoster edit example_1 -n "new_name"
-
-# Change the category
-hoster edit example_1 --category temporary
-
-# Change the content type
-hoster edit example_1 --ct json
+hoster cors                                         # view global config
+hoster cors --origin "*" --methods "GET,POST"       # update global config
+hoster cors myroute --origin "https://example.com"  # per-route override
 ```
 
-**Get the full URL of a route**:
+**Custom response headers**
 
 ```bash
-hoster url example_1
+hoster headers myroute --set "X-Custom: value"
+hoster headers myroute --remove "X-Custom"
 ```
 
-This command displays only the full URL of the route, making it easy to use in scripts or for copy/paste.
-
-**Monitor access logs in real-time**:
+**Logs**
 
 ```bash
-hoster logs
+hoster logs             # live stream, all routes
+hoster logs myroute     # specific route
 ```
 
-This command connects to the server via WebSocket and displays all incoming requests in real-time. Press Ctrl+C to stop monitoring.
-
-### 📝 Creating a Route via the Web Interface
-
-![Create Route](./.github/create-route.png)
-
-1. Log in to the administration interface
-2. Click on "New Route" in the menu
-3. Fill out the form:
-   - **Path**: the route path (e.g., /my-route)
-   - **Name**: a descriptive name for the route
-   - **Content Type**: HTML, JSON, PHP, text, or XML
-   - **Content**: the content that will be served when the route is accessed
-4. Click on "Create"
-
-### 🌐 Accessing Dynamic Routes
-
-Created routes are directly accessible at their path:
-- [http://localhost:3000/my-route](http://localhost:3000/my-route)
-- [http://localhost:3000/api/products](http://localhost:3000/api/products)
-- etc.
-
-#### PHP Support
-
-Routes with the PHP content type are evaluated by the integrated PHP server. You can use all standard PHP features, including functions like `header()` for redirections or setting custom headers.
-
-**PHP Code Example**:
-
-```php
-<?php
-// Redirect to another page
-header('Location: /other-page');
-exit;
-?>
-```
-
-```php
-<?php
-// Generate dynamic JSON
-header('Content-Type: application/json');
-$data = [
-    'success' => true,
-    'message' => 'Hello from PHP!',
-    'timestamp' => time()
-];
-echo json_encode($data);
-?>
-```
-
-## 🛠️ Project Architecture
-
-```
-│── admin-frontend/          # React frontend for administration
-│   │── public/              # Static resources
-│   │── src/                 # React source code
-│   └── package.json         # npm dependencies for frontend
-│
-│── src/
-│   │── controllers/         # Express controllers
-│   │── middlewares/         # Middlewares (auth, logger, etc.)
-│   │── models/              # Mongoose models
-│   │── routes/              # Express routes
-│   │── services/            # Services (WebSocket, etc.)
-│   │── utils/               # Utilities (PHP evaluator, etc.)
-│   └── app.js               # Application entry point
-│
-│── hoster                # Python CLI
-│── .env                     # Environment variables
-│── docker-compose.yml       # Docker configuration
-│── Dockerfile.backend       # Dockerfile for backend
-│── package.json             # npm dependencies for backend
-└── README.md                # Documentation
-```
-
-## 🔒 Security
-
-- **JWT Authentication** - The administration interface is protected by JWT tokens
-- **Password Hashing** - Passwords are hashed with bcrypt
-- **Protected Routes** - Administration routes require authentication
-- **Request Validation** - All API requests are validated
-- **API Key** - API endpoints can be accessed with an API key for programmatic access
-- **Configurable CORS** - CORS headers for dynamic routes
-
-## 👨‍💻 Development
-
-For development, you can run separately:
+**Export / Import**
 
 ```bash
-# Backend
-npm run dev
-
-# Frontend
-cd admin-frontend
-npm start
+hoster export routes.json
+hoster export routes.enc --password "secret"
+hoster import routes.json
+hoster import routes.enc --password "secret"
 ```
 
-## 📖 License
+**Shell completion**
 
-[MIT](./LICENSE)
+```bash
+# bash
+eval "$(hoster completion --shell bash)"
+
+# zsh
+eval "$(hoster completion --shell zsh)"
+```
+
+---
+
+## Architecture
+
+```
+payload-hoster/
+├── src/
+│   ├── controllers/         # routeController.js, adminController.js
+│   ├── middlewares/         # auth, apiKeyAuth, logger
+│   ├── models/              # Route, AccessLog, Config
+│   ├── routes/              # admin, apiRoutes, dynamic
+│   ├── services/            # WebSocket (Socket.IO)
+│   ├── utils/               # phpEvaluator, pathUtils
+│   └── app.js
+├── admin-frontend/
+│   └── src/
+│       ├── components/
+│       ├── contexts/
+│       ├── pages/           # Dashboard, RoutesList, RouteForm, RouteDetails, Settings
+│       └── utils/           # tagColors.js, contentTypes.js
+├── hoster                   # Python CLI
+├── Makefile
+├── docker-compose.yml
+└── .env
+```
+
+## Security
+
+- JWT sessions for the admin panel
+- bcrypt password hashing
+- `X-API-Key` header authentication for the REST API
+- Search input escaped before use in MongoDB `$regex` (ReDoS prevention)
+- AES-256-CBC encryption for route exports
 
 ---
 
 <div align="center">
 
-👍 ~~Developed~~ Vibecoded by [Vozec](https://github.com/vozec) 👍
+~~Developped~~ Vibecoded by [Vozec](https://github.com/vozec)
 
 </div>

@@ -1,0 +1,4 @@
+.claude/
+node_modules/
+admin-frontend/node_modules/
+admin-frontend/build/

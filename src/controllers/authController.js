@@ -13,19 +13,16 @@ const login = async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    // Check if user exists
     const user = await User.findOne({ username });
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Verify password
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Generate token
     const token = generateToken(user);
 
     res.json({
@@ -34,8 +31,8 @@ const login = async (req, res) => {
       user: {
         id: user._id,
         username: user.username,
-        isAdmin: user.isAdmin
-      }
+        isAdmin: user.isAdmin,
+      },
     });
   } catch (error) {
     console.error('Error during login:', error);
@@ -46,21 +43,21 @@ const login = async (req, res) => {
 const verifyToken = (req, res) => {
   res.status(200).json({
     message: 'Valid token',
-    user: req.user
+    user: req.user,
   });
 };
 
 const initAdmin = async () => {
   try {
     const adminExists = await User.findOne({ username: process.env.ADMIN_USERNAME });
-    
+
     if (!adminExists) {
       const admin = new User({
         username: process.env.ADMIN_USERNAME,
         password: process.env.ADMIN_PASSWORD,
-        isAdmin: true
+        isAdmin: true,
       });
-      
+
       await admin.save();
       console.log('Admin user created successfully');
     }
@@ -72,5 +69,5 @@ const initAdmin = async () => {
 module.exports = {
   login,
   verifyToken,
-  initAdmin
+  initAdmin,
 };

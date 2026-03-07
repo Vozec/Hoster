@@ -4,35 +4,38 @@ const AccessLogSchema = new mongoose.Schema({
   routeId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Route',
-    required: true
+    required: true,
   },
   ip: {
     type: String,
-    required: true
+    required: true,
   },
   userAgent: {
-    type: String
+    type: String,
   },
   timestamp: {
     type: Date,
-    default: Date.now
+    default: Date.now,
   },
   method: {
     type: String,
-    required: true
+    required: true,
   },
   query: {
-    type: Object
+    type: Object,
   },
   body: {
-    type: Object
+    type: Object,
   },
   headers: {
-    type: Object
+    type: Object,
   },
   rawRequest: {
-    type: String
-  }
+    type: String,
+  },
 });
+
+AccessLogSchema.index({ routeId: 1, timestamp: -1 });
+AccessLogSchema.index({ timestamp: 1 }, { expireAfterSeconds: 7776000 });
 
 module.exports = mongoose.model('AccessLog', AccessLogSchema);

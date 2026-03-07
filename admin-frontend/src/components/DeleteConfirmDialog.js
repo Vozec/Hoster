@@ -6,19 +6,11 @@ import {
   DialogActions,
   Button,
   Typography,
-  Box
+  Box,
 } from '@mui/material';
 import { Delete as DeleteIcon } from '@mui/icons-material';
 
-/**
- * Composant réutilisable pour la confirmation de suppression
- * @param {boolean} open - État d'ouverture du dialogue
- * @param {function} onClose - Fonction appelée à la fermeture du dialogue
- * @param {function} onConfirm - Fonction appelée à la confirmation de la suppression
- * @param {string} itemName - Nom de l'élément à supprimer
- * @param {string} itemType - Type d'élément à supprimer (par défaut: "route")
- */
-const DeleteConfirmDialog = ({ open, onClose, onConfirm, itemName, itemType = "route" }) => {
+const DeleteConfirmDialog = ({ open, onClose, onConfirm, itemName, itemType = 'route' }) => {
   return (
     <Dialog
       open={open}
@@ -32,24 +24,28 @@ const DeleteConfirmDialog = ({ open, onClose, onConfirm, itemName, itemType = "r
           borderColor: 'error.main',
           bgcolor: 'background.paper',
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-          minWidth: '400px'
-        }
+          minWidth: '400px',
+        },
       }}
     >
-      <DialogTitle id="delete-dialog-title" sx={{ 
-        bgcolor: 'error.dark', 
-        color: 'white',
-        fontWeight: 'bold',
-        fontSize: '1.3rem',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1
-      }}>
-        <DeleteIcon /> Confirmation de suppression
+      <DialogTitle
+        id="delete-dialog-title"
+        sx={{
+          bgcolor: 'error.dark',
+          color: 'white',
+          fontWeight: 'bold',
+          fontSize: '1.3rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+        }}
+      >
+        <DeleteIcon /> Confirm deletion
       </DialogTitle>
       <DialogContent sx={{ mt: 2, p: 3 }}>
         <Typography variant="body1" sx={{ mb: 2 }}>
-          Êtes-vous sûr de vouloir supprimer {itemType === "routes" ? "ces routes" : `cette ${itemType}`} ?
+          Are you sure you want to delete{' '}
+          {itemType === 'routes' ? 'these routes' : `this ${itemType}`}?
         </Typography>
         {itemName && (
           <Typography variant="body1" fontWeight="bold" color="error.main">
@@ -57,34 +53,36 @@ const DeleteConfirmDialog = ({ open, onClose, onConfirm, itemName, itemType = "r
           </Typography>
         )}
         <Typography variant="body2" sx={{ mt: 2, color: 'text.secondary' }}>
-          Cette action est irréversible et supprimera définitivement {itemType === "routes" ? "les routes sélectionnées" : `la ${itemType}`} et tous les logs associés.
+          This action is irreversible and will permanently delete{' '}
+          {itemType === 'routes' ? 'the selected routes' : `the ${itemType}`} and all associated
+          logs.
         </Typography>
       </DialogContent>
       <DialogActions sx={{ p: 2, pt: 0 }}>
-        <Button 
-          onClick={onClose} 
-          variant="outlined" 
-          sx={{ 
+        <Button
+          onClick={onClose}
+          variant="outlined"
+          sx={{
             borderRadius: '8px',
             textTransform: 'none',
             fontWeight: 'bold',
-            px: 3
+            px: 3,
           }}
         >
-          Annuler
+          Cancel
         </Button>
-        <Button 
-          onClick={onConfirm} 
-          variant="contained" 
-          color="error" 
-          sx={{ 
+        <Button
+          onClick={onConfirm}
+          variant="contained"
+          color="error"
+          sx={{
             borderRadius: '8px',
             textTransform: 'none',
             fontWeight: 'bold',
-            px: 3
+            px: 3,
           }}
         >
-          Supprimer
+          Delete
         </Button>
       </DialogActions>
     </Dialog>

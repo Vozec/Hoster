@@ -32,13 +32,7 @@ const NotFound = () => {
         <Typography variant="body1" sx={{ mb: 4, textAlign: 'center' }}>
           La page que vous recherchez n'existe pas ou a été déplacée.
         </Typography>
-        <Button
-          variant="contained"
-          color="primary"
-          component={Link}
-          to="/"
-          size="large"
-        >
+        <Button variant="contained" color="primary" component={Link} to="/" size="large">
           Retour à l'accueil
         </Button>
       </Paper>

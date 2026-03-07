@@ -1,452 +1,907 @@
-import React, { useState, useEffect } from 'react';
-import DeleteConfirmDialog from '../components/DeleteConfirmDialog';
-import { 
-  Typography, Paper, Table, TableBody, TableCell, TableContainer, 
-  TableHead, TableRow, Button, IconButton, Box, CircularProgress,
-  Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
-  Alert, Card, CardContent, Chip, Divider, Grid, Tooltip, TextField,
-  Checkbox, FormControlLabel, Switch, InputAdornment, Toolbar
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  Typography,
+  Box,
+  CircularProgress,
+  Alert,
+  Chip,
+  Grid,
+  Card,
+  CardContent,
+  TextField,
+  InputAdornment,
+  Button,
+  IconButton,
+  Tooltip,
+  MenuItem,
+  Select,
+  Checkbox,
+  Switch,
+  FormControlLabel,
+  FormControl,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Snackbar,
 } from '@mui/material';
-import { 
-  Edit as EditIcon, 
-  Delete as DeleteIcon, 
+import {
+  Edit as EditIcon,
+  Delete as DeleteIcon,
   Visibility as VisibilityIcon,
   Add as AddIcon,
   OpenInNew as OpenInNewIcon,
-  Code as CodeIcon,
   Search as SearchIcon,
+  ContentCopy as ContentCopyIcon,
+  CopyAll as CopyAllIcon,
+  PlayArrow as PlayArrowIcon,
+  FileDownload as FileDownloadIcon,
+  FileUpload as FileUploadIcon,
+  MoreVert as MoreVertIcon,
   FilterList as FilterListIcon,
-  DeleteSweep as DeleteSweepIcon,
-  CheckBox as CheckBoxIcon,
-  CheckBoxOutlineBlank as CheckBoxOutlineBlankIcon
+  Tag as TagIcon,
+  Close as CloseIcon,
+  GridView as GridViewIcon,
+  ViewList as ViewListIcon,
+  Sort as SortIcon,
+  AccessTime as AccessTimeIcon,
 } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import RouteForm from './RouteForm';
+import RouteTestDialog from '../components/RouteTestDialog';
+import ExportImportDialog from '../components/ExportImportDialog';
+import DeleteConfirmDialog from '../components/DeleteConfirmDialog';
 import config from '../config';
+import { alpha } from '@mui/material/styles';
+import { tagColor } from '../utils/tagColors';
+import { getCtMeta } from '../utils/contentTypes';
+
+const PAGE_SIZE = 20;
+
+const SORT_OPTIONS = [
+  { value: 'createdAt_desc', label: 'Newest first' },
+  { value: 'createdAt_asc', label: 'Oldest first' },
+  { value: 'path_asc', label: 'Path A→Z' },
+  { value: 'name_asc', label: 'Name A→Z' },
+];
+
+function sortRoutes(routes, sortBy) {
+  const [field, dir] = sortBy.split('_');
+  return [...routes].sort((a, b) => {
+    const va = field === 'createdAt' ? new Date(a[field]) : (a[field] || '').toLowerCase();
+    const vb = field === 'createdAt' ? new Date(b[field]) : (b[field] || '').toLowerCase();
+    if (va < vb) return dir === 'asc' ? -1 : 1;
+    if (va > vb) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+}
+
+function expiryLabel(route) {
+  if (route.category !== 'temporary' || !route.temporarySince) return null;
+  const daysSince = Math.floor((Date.now() - new Date(route.temporarySince)) / 86400000);
+  return `${daysSince}d old`;
+}
+
+const RouteActions = ({ route, onDelete, onClone, onTest, onCopy, navigate, stopPropagation }) => {
+  const wrap = (fn) => (e) => {
+    if (stopPropagation) e.stopPropagation();
+    fn(e);
+  };
+  return (
+    <Box
+      sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <Tooltip title="View Logs">
+        <IconButton
+          size="small"
+          color="info"
+          onClick={wrap(() => navigate(config.adminRoutes.routeDetails(route._id)))}
+        >
+          <VisibilityIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+      </Tooltip>
+      <Tooltip title="Open Route">
+        <IconButton
+          size="small"
+          color="success"
+          component="a"
+          href={route.path}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <OpenInNewIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+      </Tooltip>
+      <Tooltip title="Copy URL">
+        <IconButton
+          size="small"
+          onClick={wrap(() => onCopy(`${window.location.origin}${route.path}`))}
+        >
+          <ContentCopyIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+      </Tooltip>
+      <Tooltip title="Test Route">
+        <IconButton size="small" onClick={wrap(() => onTest(route))} sx={{ color: '#4ade80' }}>
+          <PlayArrowIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+      </Tooltip>
+      <Tooltip title="Edit">
+        <IconButton
+          size="small"
+          color="primary"
+          component={Link}
+          to={config.adminRoutes.editRoute(route._id)}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <EditIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+      </Tooltip>
+      <Tooltip title="Clone">
+        <IconButton size="small" onClick={wrap(() => onClone(route._id))} sx={{ color: '#a78bfa' }}>
+          <CopyAllIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+      </Tooltip>
+      <Tooltip title="Delete">
+        <IconButton size="small" color="error" onClick={wrap(() => onDelete(route))}>
+          <DeleteIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+      </Tooltip>
+    </Box>
+  );
+};
+
+const RouteCard = ({ route, selected, onSelect, onDelete, onClone, onTest, onCopy, navigate }) => {
+  const ct = getCtMeta(route.contentType);
+
+  return (
+    <Card
+      onClick={() => navigate(config.adminRoutes.routeDetails(route._id))}
+      sx={{
+        position: 'relative',
+        cursor: 'pointer',
+        transition: 'border-color 0.15s, box-shadow 0.15s',
+        borderColor: selected ? 'primary.main' : 'divider',
+        '&:hover': { borderColor: 'primary.light', boxShadow: '0 0 0 1px rgba(99,102,241,0.3)' },
+      }}
+    >
+      {}
+      <Box
+        sx={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Checkbox
+          checked={selected}
+          onChange={(e) => onSelect(route._id, e.target.checked)}
+          size="small"
+          sx={{ p: 0.5 }}
+        />
+      </Box>
+
+      <CardContent sx={{ pt: 1.5, pb: '12px !important', pl: 4.5 }}>
+        {}
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Box
+              sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', mb: 0.25 }}
+            >
+              <Typography
+                sx={{
+                  fontFamily: 'monospace',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  color: 'text.primary',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  maxWidth: 200,
+                }}
+              >
+                {route.path}
+              </Typography>
+              <Chip
+                label={ct.label}
+                color={ct.color}
+                size="small"
+                sx={{ height: 18, fontSize: '0.68rem' }}
+              />
+              {route.category === 'temporary' && (
+                <Chip
+                  label={expiryLabel(route) ? `temp · ${expiryLabel(route)}` : 'temp'}
+                  size="small"
+                  color="warning"
+                  icon={<AccessTimeIcon style={{ fontSize: 11 }} />}
+                  sx={{ height: 18, fontSize: '0.65rem' }}
+                />
+              )}
+            </Box>
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+              {route.name}
+            </Typography>
+            {(route.tags || []).length > 0 && (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.4, mt: 0.5 }}>
+                {route.tags.map((tag) => {
+                  const c = tagColor(tag);
+                  return (
+                    <Chip
+                      key={tag}
+                      label={tag}
+                      size="small"
+                      sx={{
+                        height: 18,
+                        fontSize: '0.65rem',
+                        bgcolor: alpha(c, 0.12),
+                        color: c,
+                        border: `1px solid ${alpha(c, 0.3)}`,
+                      }}
+                    />
+                  );
+                })}
+                {route.corsConfig?.enabled && (
+                  <Chip
+                    label="CORS"
+                    size="small"
+                    sx={{
+                      height: 18,
+                      fontSize: '0.65rem',
+                      bgcolor: alpha('#22d3ee', 0.1),
+                      color: '#22d3ee',
+                    }}
+                  />
+                )}
+              </Box>
+            )}
+          </Box>
+          <RouteActions
+            route={route}
+            onDelete={onDelete}
+            onClone={onClone}
+            onTest={onTest}
+            onCopy={onCopy}
+            navigate={navigate}
+            stopPropagation
+          />
+        </Box>
+      </CardContent>
+    </Card>
+  );
+};
+
+const RouteRow = ({ route, selected, onSelect, onDelete, onClone, onTest, onCopy, navigate }) => {
+  const ct = getCtMeta(route.contentType);
+  return (
+    <Box
+      onClick={() => navigate(config.adminRoutes.routeDetails(route._id))}
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1.5,
+        px: 2,
+        py: 1.25,
+        cursor: 'pointer',
+        borderBottom: '1px solid',
+        borderColor: 'divider',
+        bgcolor: selected ? alpha('#6366f1', 0.06) : 'background.paper',
+        transition: 'background 0.12s',
+        '&:hover': { bgcolor: alpha('#6366f1', 0.08) },
+        '&:last-child': { borderBottom: 'none' },
+      }}
+    >
+      <Box onClick={(e) => e.stopPropagation()}>
+        <Checkbox
+          checked={selected}
+          onChange={(e) => onSelect(route._id, e.target.checked)}
+          size="small"
+          sx={{ p: 0.25 }}
+        />
+      </Box>
+      <Chip
+        label={ct.label}
+        color={ct.color}
+        size="small"
+        sx={{ height: 18, fontSize: '0.68rem', flexShrink: 0 }}
+      />
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography
+          sx={{
+            fontFamily: 'monospace',
+            fontSize: '0.88rem',
+            fontWeight: 600,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {route.path}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          {route.name}
+        </Typography>
+      </Box>
+      <Box sx={{ display: 'flex', gap: 0.4, flexWrap: 'wrap', flexShrink: 0, maxWidth: 200 }}>
+        {(route.tags || []).map((tag) => {
+          const c = tagColor(tag);
+          return (
+            <Chip
+              key={tag}
+              label={tag}
+              size="small"
+              sx={{
+                height: 16,
+                fontSize: '0.62rem',
+                bgcolor: alpha(c, 0.12),
+                color: c,
+                border: `1px solid ${alpha(c, 0.25)}`,
+              }}
+            />
+          );
+        })}
+        {route.category === 'temporary' && (
+          <Chip
+            label={expiryLabel(route) ? `temp · ${expiryLabel(route)}` : 'temp'}
+            size="small"
+            color="warning"
+            sx={{ height: 16, fontSize: '0.62rem' }}
+          />
+        )}
+      </Box>
+      <RouteActions
+        route={route}
+        onDelete={onDelete}
+        onClone={onClone}
+        onTest={onTest}
+        onCopy={onCopy}
+        navigate={navigate}
+        stopPropagation
+      />
+    </Box>
+  );
+};
 
 const RoutesList = () => {
   const [routes, setRoutes] = useState([]);
   const [filteredRoutes, setFilteredRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [routeToDelete, setRouteToDelete] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showTemporary, setShowTemporary] = useState(() => {
-    const savedState = localStorage.getItem('showTemporaryRoutes');
-    return savedState ? JSON.parse(savedState) : false;
-  });
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const searchDebounceRef = useRef(null);
+  const [showTemporary, setShowTemporary] = useState(() =>
+    JSON.parse(localStorage.getItem('showTemporaryRoutes') || 'false')
+  );
   const [selectedRoutes, setSelectedRoutes] = useState([]);
-  const [deleteMultipleDialogOpen, setDeleteMultipleDialogOpen] = useState(false);
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  
+  const [activeTag, setActiveTag] = useState(null);
+  const [allTags, setAllTags] = useState([]);
+
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('routesViewMode') || 'grid');
+  const [sortBy, setSortBy] = useState(
+    () => localStorage.getItem('routesSortBy') || 'createdAt_desc'
+  );
+  const [page, setPage] = useState(1);
+  const [deleteRoute, setDeleteRoute] = useState(null);
+  const [deleteMultiOpen, setDeleteMultiOpen] = useState(false);
+  const [testRoute, setTestRoute] = useState(null);
+  const [exportImportOpen, setExportImportOpen] = useState(false);
+  const [snackbar, setSnackbar] = useState('');
+  const [cloneDialog, setCloneDialog] = useState(null);
+  const [cloneTargetPath, setCloneTargetPath] = useState('');
+
+  const handleViewMode = (mode) => {
+    setViewMode(mode);
+    localStorage.setItem('routesViewMode', mode);
+  };
+
+  const handleSortBy = (val) => {
+    setSortBy(val);
+    localStorage.setItem('routesSortBy', val);
+    setPage(1);
+  };
+
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchRoutes();
-  }, []);
-
-  const fetchRoutes = async () => {
+  const fetchRoutes = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const response = await axios.get(config.apiRoutes.routes);
-      setRoutes(response.data);
-      filterRoutes(response.data, searchTerm, showTemporary);
+      const res = await axios.get(config.apiRoutes.routes);
+      setRoutes(res.data);
+      const tags = [...new Set(res.data.flatMap((r) => r.tags || []))].sort();
+      setAllTags(tags);
       setError('');
-    } catch (err) {
-      console.error('Error retrieving routes:', err);
+    } catch {
       setError('Unable to load routes');
     } finally {
       setLoading(false);
     }
-  };
-  
-  const filterRoutes = (routesData, search, showTemp) => {
-    let result = routesData;
-    
-    // Filter by category if temporary routes are not displayed
-    if (!showTemp) {
-      result = result.filter(route => route.category !== 'temporary');
-    }
-    
-    // Filter by search term
+  }, []);
+
+  useEffect(() => {
+    fetchRoutes();
+  }, [fetchRoutes]);
+
+  const filterRoutes = useCallback((data, search, showTemp, tag) => {
+    let result = data;
+    if (!showTemp) result = result.filter((r) => r.category !== 'temporary');
+    if (tag) result = result.filter((r) => (r.tags || []).includes(tag));
     if (search) {
-      const searchLower = search.toLowerCase();
-      result = result.filter(route => 
-        route.name.toLowerCase().includes(searchLower) || 
-        route.path.toLowerCase().includes(searchLower)
+      const s = search.toLowerCase();
+      result = result.filter(
+        (r) =>
+          r.name?.toLowerCase().includes(s) ||
+          r.path?.toLowerCase().includes(s) ||
+          r.contentType?.toLowerCase().includes(s) ||
+          r.content?.toLowerCase().includes(s) ||
+          (r.tags || []).some((t) => t.toLowerCase().includes(s))
       );
     }
-    
     setFilteredRoutes(result);
-  };
-  
-  // Update filters when states change
-  useEffect(() => {
-    if (routes.length > 0) {
-      filterRoutes(routes, searchTerm, showTemporary);
-    }
-  }, [searchTerm, showTemporary]);
+  }, []);
 
-  const handleDeleteClick = (route) => {
-    setRouteToDelete(route);
-    setDeleteDialogOpen(true);
-  };
+  useEffect(() => {
+    clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => setDebouncedSearch(searchTerm), 150);
+    return () => clearTimeout(searchDebounceRef.current);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    filterRoutes(routes, debouncedSearch, showTemporary, activeTag);
+    setPage(1);
+  }, [routes, debouncedSearch, showTemporary, activeTag, filterRoutes]);
 
   const handleDeleteConfirm = async () => {
-    if (!routeToDelete) return;
-    
+    if (!deleteRoute) return;
     try {
-      await axios.delete(config.apiRoutes.route(routeToDelete._id));
-      const updatedRoutes = routes.filter(route => route._id !== routeToDelete._id);
-      setRoutes(updatedRoutes);
-      filterRoutes(updatedRoutes, searchTerm, showTemporary);
-      setDeleteDialogOpen(false);
-      setRouteToDelete(null);
-    } catch (err) {
-      console.error('Error deleting route:', err);
+      await axios.delete(config.apiRoutes.route(deleteRoute._id));
+      const updated = routes.filter((r) => r._id !== deleteRoute._id);
+      setRoutes(updated);
+    } catch {
       setError('Error deleting route');
     }
+    setDeleteRoute(null);
   };
 
-  const handleDeleteCancel = () => {
-    setDeleteDialogOpen(false);
-    setRouteToDelete(null);
-  };
-  
-  // Fonctions pour la sélection multiple
-  const handleSelectRoute = (event, routeId) => {
-    if (event.target.checked) {
-      setSelectedRoutes([...selectedRoutes, routeId]);
-    } else {
-      setSelectedRoutes(selectedRoutes.filter(id => id !== routeId));
-    }
-  };
-  
-  const handleSelectAll = (event) => {
-    if (event.target.checked) {
-      setSelectedRoutes(filteredRoutes.map(route => route._id));
-    } else {
-      setSelectedRoutes([]);
-    }
-  };
-  
-  const handleDeleteMultipleClick = () => {
-    if (selectedRoutes.length === 0) return;
-    setDeleteMultipleDialogOpen(true);
-  };
-  
-  const handleDeleteMultipleConfirm = async () => {
+  const handleDeleteMultiple = async () => {
     try {
       await axios.post(config.apiRoutes.deleteMultiple, { ids: selectedRoutes });
-      const updatedRoutes = routes.filter(route => !selectedRoutes.includes(route._id));
-      setRoutes(updatedRoutes);
-      filterRoutes(updatedRoutes, searchTerm, showTemporary);
+      setRoutes(routes.filter((r) => !selectedRoutes.includes(r._id)));
       setSelectedRoutes([]);
-      setDeleteMultipleDialogOpen(false);
+    } catch {
+      setError('Error deleting routes');
+    }
+    setDeleteMultiOpen(false);
+  };
+
+  const handleClone = (id) => {
+    const route = routes.find((r) => r._id === id);
+    setCloneTargetPath('');
+    setCloneDialog({ id, name: route?.name || '' });
+  };
+
+  const handleCloneConfirm = async () => {
+    if (!cloneDialog) return;
+    try {
+      await axios.post(config.apiRoutes.cloneRoute(cloneDialog.id), {
+        targetPath: cloneTargetPath.trim() || undefined,
+      });
+      setSnackbar('Route cloned successfully');
+      fetchRoutes();
     } catch (err) {
-      console.error('Error deleting multiple routes:', err);
-      setError('Error deleting multiple routes');
+      setSnackbar(err.response?.data?.message || 'Failed to clone route');
     }
-  };
-  
-  const handleDeleteMultipleCancel = () => {
-    setDeleteMultipleDialogOpen(false);
+    setCloneDialog(null);
   };
 
-  // Content type utility functions
-  const getContentTypeLabel = (contentType) => {
-    switch (contentType) {
-      case 'text/html':
-        return 'HTML';
-      case 'application/json':
-        return 'JSON';
-      case 'text/plain':
-        return 'Text';
-      case 'application/xml':
-        return 'XML';
-      case 'application/javascript':
-        return 'JavaScript';
-      default:
-        return 'Custom';
-    }
+  const handleSelect = (id, checked) => {
+    setSelectedRoutes((prev) => (checked ? [...prev, id] : prev.filter((i) => i !== id)));
   };
 
-  const getContentTypeColor = (contentType) => {
-    switch (contentType) {
-      case 'text/html':
-        return 'primary';
-      case 'application/json':
-        return 'secondary';
-      case 'text/plain':
-        return 'success';
-      case 'application/xml':
-        return 'info';
-      case 'application/javascript':
-        return 'warning';
-      default:
-        return 'default';
-    }
+  const handleSelectAll = (checked) => {
+    setSelectedRoutes(checked ? filteredRoutes.map((r) => r._id) : []);
   };
 
-  const handleViewLogs = (routeId) => {
-    navigate(config.adminRoutes.routeDetails(routeId));
+  const handleCopyUrl = (url) => {
+    navigator.clipboard.writeText(url);
+    setSnackbar('URL copied to clipboard');
   };
 
-  if (loading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
+  const handleToggleTemp = (v) => {
+    setShowTemporary(v);
+    localStorage.setItem('showTemporaryRoutes', JSON.stringify(v));
+  };
 
   return (
-    <div>
-
-
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mb: 3, gap: 2 }}>
-        {selectedRoutes.length > 0 && (
-          <Button
-            variant="outlined"
-            color="error"
-            startIcon={<DeleteSweepIcon />}
-            onClick={handleDeleteMultipleClick}
-            sx={{ borderRadius: '8px', textTransform: 'none' }}
+    <Box>
+      {}
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          mb: 3,
+          flexWrap: 'wrap',
+          gap: 2,
+        }}
+      >
+        <Box>
+          <Typography variant="h5" sx={{ mb: 0.25 }}>
+            Routes
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {filteredRoutes.length} route{filteredRoutes.length !== 1 ? 's' : ''}{' '}
+            {routes.length !== filteredRoutes.length ? `of ${routes.length}` : ''}
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+          <FormControl size="small" sx={{ minWidth: 140 }}>
+            <Select
+              value={sortBy}
+              onChange={(e) => handleSortBy(e.target.value)}
+              startAdornment={<SortIcon sx={{ fontSize: 16, mr: 0.5, color: 'text.disabled' }} />}
+              sx={{ fontSize: '0.8rem' }}
+            >
+              {SORT_OPTIONS.map((o) => (
+                <MenuItem key={o.value} value={o.value} sx={{ fontSize: '0.8rem' }}>
+                  {o.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <Box
+            sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, display: 'flex' }}
           >
-            Delete Selected ({selectedRoutes.length})
+            <Tooltip title="Grid view">
+              <IconButton
+                size="small"
+                onClick={() => handleViewMode('grid')}
+                sx={{
+                  borderRadius: '6px 0 0 6px',
+                  bgcolor: viewMode === 'grid' ? alpha('#6366f1', 0.15) : 'transparent',
+                }}
+              >
+                <GridViewIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="List view">
+              <IconButton
+                size="small"
+                onClick={() => handleViewMode('list')}
+                sx={{
+                  borderRadius: '0 6px 6px 0',
+                  bgcolor: viewMode === 'list' ? alpha('#6366f1', 0.15) : 'transparent',
+                }}
+              >
+                <ViewListIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
+          </Box>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<FileDownloadIcon />}
+            onClick={() => setExportImportOpen(true)}
+          >
+            Export / Import
           </Button>
-        )}
+          <Button
+            size="small"
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => navigate('/routes/new')}
+          >
+            New Route
+          </Button>
+        </Box>
       </Box>
-      
-      <Paper sx={{ p: 4, mb: 3, borderRadius: '12px', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)' }}>
-        <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} md={6}>
-            <TextField
-              fullWidth
-              placeholder="Search by name or path..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon color="action" />
-                  </InputAdornment>
-                ),
-                sx: { borderRadius: '8px' }
-              }}
-              variant="outlined"
-              size="small"
-            />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 2 }}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={showTemporary}
-                    onChange={(e) => {
-                      const newValue = e.target.checked;
-                      setShowTemporary(newValue);
-                      localStorage.setItem('showTemporaryRoutes', JSON.stringify(newValue));
-                    }}
-                    color="primary"
-                  />
-                }
-                label="Show Temporary Routes"
-              />
-            </Box>
-          </Grid>
-        </Grid>
-      </Paper>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
+        <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
       )}
 
-      {routes.length === 0 ? (
-        <Paper sx={{ p: 5, textAlign: 'center', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}>
-          <Typography variant="h6" color="textSecondary" sx={{ mb: 2 }}>
-            No routes have been created yet
-          </Typography>
-          <Button
-            variant="outlined"
-            color="primary"
-            onClick={() => setCreateDialogOpen(true)}
-            startIcon={<AddIcon />}
-            sx={{ 
-              mt: 2, 
-              borderRadius: '8px', 
-              textTransform: 'none', 
-              py: 1, 
-              px: 3,
-              borderColor: '#1976d2',
-              color: '#1976d2',
-              '&:hover': {
-                borderColor: '#1976d2',
-                bgcolor: 'rgba(25, 118, 210, 0.04)'
-              }
+      {}
+      <Box sx={{ mb: 2 }}>
+        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap', mb: 1.5 }}>
+          <TextField
+            sx={{ flex: 1, minWidth: 200 }}
+            placeholder="Search in all fields..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            size="small"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" sx={{ color: 'text.disabled' }} />
+                </InputAdornment>
+              ),
+              endAdornment: searchTerm && (
+                <InputAdornment position="end">
+                  <IconButton size="small" onClick={() => setSearchTerm('')}>
+                    <CloseIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              ),
             }}
-          >
-            Create your first route
-          </Button>
-        </Paper>
-      ) : filteredRoutes.length === 0 ? (
-        <Paper sx={{ p: 5, textAlign: 'center', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}>
-          <Typography variant="h6" color="textSecondary" sx={{ mb: 2 }}>
-            No routes match your search criteria
-          </Typography>
-          {!showTemporary && (
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={showTemporary}
+                onChange={(e) => handleToggleTemp(e.target.checked)}
+                size="small"
+              />
+            }
+            label={<Typography variant="caption">Show Temp</Typography>}
+            sx={{ m: 0 }}
+          />
+          {selectedRoutes.length > 0 && (
             <Button
+              size="small"
               variant="outlined"
-              color="primary"
-              onClick={() => setShowTemporary(true)}
-              sx={{ borderRadius: '8px', textTransform: 'none', py: 1, px: 3, mr: 2 }}
+              color="error"
+              startIcon={<DeleteIcon />}
+              onClick={() => setDeleteMultiOpen(true)}
             >
-              Show Temporary Routes
+              Delete ({selectedRoutes.length})
             </Button>
           )}
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={() => { setSearchTerm(''); setShowTemporary(true); }}
-            sx={{ borderRadius: '8px', textTransform: 'none', py: 1, px: 3 }}
-          >
-            Clear Filters
-          </Button>
-        </Paper>
-      ) : (
-        <TableContainer component={Paper} sx={{ borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}>
-          <Table>
-            <TableHead>
-              <TableRow sx={{ backgroundColor: 'background.paper' }}>
-                <TableCell sx={{ fontWeight: 'bold', color: 'text.primary' }}>
-                  <Checkbox
-                    checked={selectedRoutes.length === filteredRoutes.length}
-                    onChange={handleSelectAll}
-                    color="primary"
-                  />
-                </TableCell>
-                <TableCell sx={{ fontWeight: 'bold', color: 'text.primary' }}>Name</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', color: 'text.primary' }}>Path</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', color: 'text.primary' }}>Content Type</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', color: 'text.primary' }}>Created</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', color: 'text.primary' }}>Last Modified</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', color: 'text.primary' }}>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredRoutes.map((route) => (
-                <TableRow key={route._id} hover>
-                  <TableCell padding="checkbox">
-                    <Checkbox
-                      checked={selectedRoutes.includes(route._id)}
-                      onChange={(e) => handleSelectRoute(e, route._id)}
-                      color="primary"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    {route.name}
-                    {route.category === 'temporary' && (
-                      <Chip
-                        label="Temporary"
-                        size="small"
-                        color="warning"
-                        sx={{ ml: 1, fontSize: '0.7rem' }}
-                      />
-                    )}
-                  </TableCell>
-                  <TableCell>{route.path}</TableCell>
-                  <TableCell>
-                    <Chip 
-                      label={getContentTypeLabel(route.contentType)} 
-                      color={getContentTypeColor(route.contentType)}
-                      size="small"
-                      icon={<CodeIcon />}
-                    />
-                  </TableCell>
-                  <TableCell>{new Date(route.createdAt).toLocaleDateString()}</TableCell>
-                  <TableCell>{new Date(route.updatedAt).toLocaleDateString()}</TableCell>
-                  <TableCell>
-                    <Box sx={{ display: 'flex' }}>
-                      <Tooltip title="View Logs">
-                        <IconButton 
-                          color="info" 
-                          onClick={() => handleViewLogs(route._id)}
-                          size="small"
-                        >
-                          <VisibilityIcon />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Visit Route">
-                        <IconButton 
-                          color="success" 
-                          component="a"
-                          href={route.path}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          size="small"
-                        >
-                          <OpenInNewIcon />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Edit">
-                        <IconButton 
-                          color="primary" 
-                          component={Link} 
-                          to={config.adminRoutes.editRoute(route._id)}
-                          size="small"
-                        >
-                          <EditIcon />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Delete">
-                        <IconButton 
-                          color="error" 
-                          onClick={() => handleDeleteClick(route)}
-                          size="small"
-                        >
-                          <DeleteIcon />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+        </Box>
+
+        {}
+        {allTags.length > 0 && (
+          <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', alignItems: 'center' }}>
+            <TagIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+            <Chip
+              label="All"
+              size="small"
+              onClick={() => setActiveTag(null)}
+              variant={!activeTag ? 'filled' : 'outlined'}
+              color={!activeTag ? 'primary' : 'default'}
+              sx={{ height: 22, fontSize: '0.72rem', cursor: 'pointer' }}
+            />
+            {allTags.map((tag) => {
+              const c = tagColor(tag);
+              return (
+                <Chip
+                  key={tag}
+                  label={tag}
+                  size="small"
+                  onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+                  sx={{
+                    height: 22,
+                    fontSize: '0.72rem',
+                    cursor: 'pointer',
+                    bgcolor: activeTag === tag ? alpha(c, 0.2) : alpha(c, 0.08),
+                    color: c,
+                    border: `1px solid ${alpha(c, activeTag === tag ? 0.5 : 0.2)}`,
+                    fontWeight: activeTag === tag ? 600 : 400,
+                  }}
+                />
+              );
+            })}
+          </Box>
+        )}
+      </Box>
+
+      {}
+      {filteredRoutes.length > 0 && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, px: 0.5 }}>
+          <Checkbox
+            size="small"
+            checked={selectedRoutes.length === filteredRoutes.length && filteredRoutes.length > 0}
+            indeterminate={
+              selectedRoutes.length > 0 && selectedRoutes.length < filteredRoutes.length
+            }
+            onChange={(e) => handleSelectAll(e.target.checked)}
+          />
+          <Typography variant="caption" color="text.secondary">
+            {selectedRoutes.length > 0 ? `${selectedRoutes.length} selected` : 'Select all'}
+          </Typography>
+        </Box>
       )}
 
-      {/* Delete confirmation dialog */}
+      {}
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
+          <CircularProgress />
+        </Box>
+      ) : filteredRoutes.length === 0 ? (
+        <Box
+          sx={{
+            textAlign: 'center',
+            py: 8,
+            border: '1px dashed',
+            borderColor: 'divider',
+            borderRadius: 2,
+          }}
+        >
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {routes.length === 0 ? 'No routes yet' : 'No routes match your filters'}
+          </Typography>
+          {routes.length === 0 ? (
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => navigate('/routes/new')}
+              size="small"
+            >
+              Create your first route
+            </Button>
+          ) : (
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => {
+                setSearchTerm('');
+                setActiveTag(null);
+              }}
+            >
+              Clear filters
+            </Button>
+          )}
+        </Box>
+      ) : (
+        (() => {
+          const sorted = sortRoutes(filteredRoutes, sortBy);
+          const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
+          const paged = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+          return (
+            <>
+              {viewMode === 'grid' ? (
+                <Grid container spacing={2}>
+                  {paged.map((route) => (
+                    <Grid item xs={12} sm={6} lg={4} key={route._id}>
+                      <RouteCard
+                        route={route}
+                        selected={selectedRoutes.includes(route._id)}
+                        onSelect={handleSelect}
+                        onDelete={setDeleteRoute}
+                        onClone={handleClone}
+                        onTest={setTestRoute}
+                        onCopy={handleCopyUrl}
+                        navigate={navigate}
+                      />
+                    </Grid>
+                  ))}
+                </Grid>
+              ) : (
+                <Box
+                  sx={{
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 2,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {paged.map((route) => (
+                    <RouteRow
+                      key={route._id}
+                      route={route}
+                      selected={selectedRoutes.includes(route._id)}
+                      onSelect={handleSelect}
+                      onDelete={setDeleteRoute}
+                      onClone={handleClone}
+                      onTest={setTestRoute}
+                      onCopy={handleCopyUrl}
+                      navigate={navigate}
+                    />
+                  ))}
+                </Box>
+              )}
+              {totalPages > 1 && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    mt: 3,
+                  }}
+                >
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="inherit"
+                    disabled={page === 1}
+                    onClick={() => setPage((p) => p - 1)}
+                  >
+                    Previous
+                  </Button>
+                  <Typography variant="caption" color="text.secondary">
+                    {page} / {totalPages}
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="inherit"
+                    disabled={page === totalPages}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    Next
+                  </Button>
+                </Box>
+              )}
+            </>
+          );
+        })()
+      )}
+
+      {}
       <DeleteConfirmDialog
-        open={!!routeToDelete}
-        onClose={handleDeleteCancel}
+        open={!!deleteRoute}
+        onClose={() => setDeleteRoute(null)}
         onConfirm={handleDeleteConfirm}
-        itemName={routeToDelete?.name}
+        itemName={deleteRoute?.name}
         itemType="route"
       />
-      
-      {/* Delete multiple confirmation dialog */}
+
       <DeleteConfirmDialog
-        open={deleteMultipleDialogOpen}
-        onClose={handleDeleteMultipleCancel}
-        onConfirm={handleDeleteMultipleConfirm}
-        itemName={`${selectedRoutes.length} routes sélectionnées`}
+        open={deleteMultiOpen}
+        onClose={() => setDeleteMultiOpen(false)}
+        onConfirm={handleDeleteMultiple}
+        itemName={`${selectedRoutes.length} routes`}
         itemType="routes"
       />
 
-      {/* Dialog pour la création de route */}
-      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Create New Route</DialogTitle>
+      {testRoute && (
+        <RouteTestDialog open={!!testRoute} onClose={() => setTestRoute(null)} route={testRoute} />
+      )}
+
+      <ExportImportDialog
+        open={exportImportOpen}
+        onClose={() => setExportImportOpen(false)}
+        onImportSuccess={fetchRoutes}
+      />
+
+      {}
+      <Dialog open={!!cloneDialog} onClose={() => setCloneDialog(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ pb: 1 }}>
+          <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 600 }}>
+            Clone Route
+          </Typography>
+          {cloneDialog && (
+            <Typography variant="caption" color="text.secondary">
+              {cloneDialog.name}
+            </Typography>
+          )}
+        </DialogTitle>
         <DialogContent>
-          <RouteForm onSuccess={() => { setCreateDialogOpen(false); fetchRoutes(); }} isPopup />
+          <TextField
+            fullWidth
+            size="small"
+            label="Target path (optional)"
+            value={cloneTargetPath}
+            onChange={(e) => setCloneTargetPath(e.target.value)}
+            placeholder="/my-clone"
+            helperText="Leave empty to auto-generate a random path"
+            InputProps={{ sx: { fontFamily: 'monospace' } }}
+            sx={{ mt: 1 }}
+            autoFocus
+          />
         </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            size="small"
+            variant="outlined"
+            color="inherit"
+            onClick={() => setCloneDialog(null)}
+          >
+            Cancel
+          </Button>
+          <Button size="small" variant="contained" onClick={handleCloneConfirm}>
+            Clone
+          </Button>
+        </DialogActions>
       </Dialog>
-    </div>
+
+      <Snackbar
+        open={!!snackbar}
+        autoHideDuration={3000}
+        onClose={() => setSnackbar('')}
+        message={snackbar}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
+    </Box>
   );
 };
 

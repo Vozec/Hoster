@@ -1,130 +1,319 @@
-import React from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
-  AppBar,
-  Toolbar,
+  Drawer,
+  List,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
   Typography,
   IconButton,
-  Paper,
-  Container,
   Tooltip,
+  Avatar,
+  Divider,
+  useMediaQuery,
   useTheme,
-  Button
+  AppBar,
+  Toolbar,
 } from '@mui/material';
 import {
+  Dashboard as DashboardIcon,
+  Route as RouteIcon,
+  Settings as SettingsIcon,
   Logout as LogoutIcon,
-  Add as AddIcon
+  Menu as MenuIcon,
+  ChevronLeft as ChevronLeftIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
-import config from '../config';
+import { alpha } from '@mui/material/styles';
+
+const SIDEBAR_WIDTH = 220;
+const SIDEBAR_COLLAPSED_WIDTH = 64;
+
+const navItems = [
+  { label: 'Dashboard', icon: <DashboardIcon />, path: '/' },
+  { label: 'Routes', icon: <RouteIcon />, path: '/routes' },
+  { label: 'Settings', icon: <SettingsIcon />, path: '/settings' },
+];
 
 const Layout = () => {
   const theme = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
   const { logout, currentUser } = useAuth();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
-  const handleLogout = () => {
-    logout();
-    navigate(config.adminRoutes.login);
+  const sidebarWidth = collapsed && !isMobile ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH;
+
+  const isActive = (path) => {
+    if (path === '/') return location.pathname === '/';
+    return location.pathname.startsWith(path);
   };
 
-  return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', bgcolor: 'background.default' }}>
-      {/* App Bar */}
-      <AppBar
-        position="fixed"
+  const handleNav = (path) => {
+    navigate(path);
+    if (isMobile) setMobileOpen(false);
+  };
+
+  const SidebarContent = () => (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', py: 1 }}>
+      {}
+      <Box
         sx={{
-          bgcolor: 'background.darker',
-          color: 'text.primary',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+          px: collapsed ? 1 : 2,
+          py: 1.5,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'space-between',
+          minHeight: 56,
         }}
       >
-        <Toolbar>
-          <Typography variant="h5" component="div" sx={{ 
-            flexGrow: 1, 
-            fontWeight: 'bold',
-            background: 'linear-gradient(45deg, #4a6da7 30%, #6889c0 90%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            letterSpacing: '0.5px',
-            fontSize: '1.8rem',
-            display: 'flex',
-            alignItems: 'center'
-          }}>
-            Payload Hoster
-          </Typography>
-          
-          <Button 
-            variant="outlined" 
-            color="primary" 
-            onClick={() => navigate('/routes/new')}
-            startIcon={<AddIcon />}
-            sx={{ 
-              mr: 2,
-              borderRadius: '8px', 
-              textTransform: 'none', 
-              py: 1, 
-              px: 2,
-              borderColor: '#4a6da7',
-              color: '#4a6da7',
-              '&:hover': {
-                borderColor: '#4a6da7',
-                bgcolor: 'rgba(74, 109, 167, 0.04)'
-              }
-            }}
-          >
-            New Route
-          </Button>
-          
-          <Tooltip title="Logout">
-            <IconButton 
-              onClick={handleLogout} 
-              color="primary" 
-              size="large"
-              sx={{ 
-                border: '2px solid',
-                borderColor: 'primary.main',
-                '&:hover': {
-                  bgcolor: 'rgba(25, 118, 210, 0.2)'
-                }
+        {!collapsed && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box
+              sx={{
+                width: 30,
+                height: 30,
+                borderRadius: '8px',
+                background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
               }}
             >
-              <LogoutIcon />
-            </IconButton>
-          </Tooltip>
-        </Toolbar>
-      </AppBar>
+              <RouteIcon sx={{ color: '#fff', fontSize: 16 }} />
+            </Box>
+            <Typography
+              sx={{
+                fontWeight: 700,
+                fontSize: '0.95rem',
+                letterSpacing: '-0.01em',
+                color: 'text.primary',
+              }}
+            >
+              Hoster
+            </Typography>
+          </Box>
+        )}
+        {collapsed && (
+          <Box
+            sx={{
+              width: 30,
+              height: 30,
+              borderRadius: '8px',
+              background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <RouteIcon sx={{ color: '#fff', fontSize: 16 }} />
+          </Box>
+        )}
+        {!isMobile && !collapsed && (
+          <IconButton
+            size="small"
+            onClick={() => setCollapsed(true)}
+            sx={{ color: 'text.secondary', p: 0.5 }}
+          >
+            <ChevronLeftIcon fontSize="small" />
+          </IconButton>
+        )}
+        {!isMobile && collapsed && (
+          <IconButton
+            size="small"
+            onClick={() => setCollapsed(false)}
+            sx={{ color: 'text.secondary', p: 0.5, mt: 1 }}
+          >
+            <MenuIcon fontSize="small" />
+          </IconButton>
+        )}
+      </Box>
 
-      {/* Main Content */}
+      <Divider sx={{ mx: 1, mb: 1 }} />
+
+      {}
+      <List sx={{ px: 0.5, flex: 1 }}>
+        {navItems.map((item) => {
+          const active = isActive(item.path);
+          return (
+            <Tooltip key={item.path} title={collapsed ? item.label : ''} placement="right">
+              <ListItemButton
+                onClick={() => handleNav(item.path)}
+                selected={active}
+                sx={{
+                  minHeight: 40,
+                  borderRadius: '8px !important',
+                  mx: '4px !important',
+                  mb: 0.5,
+                  justifyContent: collapsed ? 'center' : 'flex-start',
+                  px: collapsed ? 1 : 1.5,
+                  ...(active && {
+                    borderLeft: `3px solid ${theme.palette.primary.main}`,
+                    pl: collapsed ? 1 : '9px',
+                    bgcolor: alpha(theme.palette.primary.main, 0.12),
+                    '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.16) },
+                  }),
+                  ...(!active && {
+                    '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.06) },
+                  }),
+                }}
+              >
+                <ListItemIcon
+                  sx={{
+                    minWidth: collapsed ? 'auto' : 36,
+                    color: active ? 'primary.main' : 'text.secondary',
+                    mr: collapsed ? 0 : 0,
+                  }}
+                >
+                  {React.cloneElement(item.icon, { fontSize: 'small' })}
+                </ListItemIcon>
+                {!collapsed && (
+                  <ListItemText
+                    primary={item.label}
+                    primaryTypographyProps={{
+                      fontSize: '0.875rem',
+                      fontWeight: active ? 600 : 400,
+                      color: active ? 'text.primary' : 'text.secondary',
+                    }}
+                  />
+                )}
+              </ListItemButton>
+            </Tooltip>
+          );
+        })}
+      </List>
+
+      <Divider sx={{ mx: 1, mb: 1 }} />
+
+      {}
+      <Box
+        sx={{
+          px: collapsed ? 0.5 : 1.5,
+          py: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'space-between',
+          gap: 1,
+        }}
+      >
+        {!collapsed && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+            <Avatar
+              sx={{
+                width: 28,
+                height: 28,
+                fontSize: '0.75rem',
+                background: 'linear-gradient(135deg, #6366f1 0%, #22d3ee 100%)',
+                flexShrink: 0,
+              }}
+            >
+              {currentUser?.username?.[0]?.toUpperCase() || 'A'}
+            </Avatar>
+            <Typography
+              sx={{
+                fontSize: '0.8rem',
+                fontWeight: 500,
+                color: 'text.secondary',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {currentUser?.username || 'admin'}
+            </Typography>
+          </Box>
+        )}
+        <Tooltip title="Logout" placement="right">
+          <IconButton
+            size="small"
+            onClick={logout}
+            sx={{
+              color: 'text.secondary',
+              '&:hover': { color: 'error.main', bgcolor: alpha('#f87171', 0.08) },
+              flexShrink: 0,
+            }}
+          >
+            <LogoutIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </Box>
+    </Box>
+  );
+
+  return (
+    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
+      {}
+      {isMobile && (
+        <AppBar position="fixed" sx={{ zIndex: theme.zIndex.drawer + 1 }}>
+          <Toolbar variant="dense">
+            <IconButton
+              edge="start"
+              color="inherit"
+              onClick={() => setMobileOpen(true)}
+              sx={{ mr: 1 }}
+            >
+              <MenuIcon />
+            </IconButton>
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>
+              Hoster
+            </Typography>
+          </Toolbar>
+        </AppBar>
+      )}
+
+      {}
+      {isMobile && (
+        <Drawer
+          variant="temporary"
+          open={mobileOpen}
+          onClose={() => setMobileOpen(false)}
+          ModalProps={{ keepMounted: true }}
+          sx={{ '& .MuiDrawer-paper': { width: SIDEBAR_WIDTH, boxSizing: 'border-box' } }}
+        >
+          <SidebarContent />
+        </Drawer>
+      )}
+
+      {}
+      {!isMobile && (
+        <Drawer
+          variant="permanent"
+          sx={{
+            width: sidebarWidth,
+            flexShrink: 0,
+            transition: 'width 0.2s ease',
+            '& .MuiDrawer-paper': {
+              width: sidebarWidth,
+              boxSizing: 'border-box',
+              transition: 'width 0.2s ease',
+              overflowX: 'hidden',
+            },
+          }}
+        >
+          <SidebarContent />
+        </Drawer>
+      )}
+
+      {}
       <Box
         component="main"
         sx={{
           flexGrow: 1,
+          minHeight: '100vh',
+          pt: isMobile ? '48px' : 0,
           display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          width: '100%',
-          mt: '64px', // Toolbar height
-          p: 1,
+          flexDirection: 'column',
+          overflow: 'hidden',
         }}
       >
-        <Container maxWidth={false} sx={{ py: 2, width: '100%', px: 1 }}>
-          <Paper 
-            elevation={0} 
-            sx={{ 
-              p: 4, 
-              borderRadius: 2,
-              border: '2px solid',
-              borderColor: 'primary.main',
-              bgcolor: 'background.paper',
-              minHeight: 'calc(100vh - 100px)',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-            }}
-          >
-            <Outlet />
-          </Paper>
-        </Container>
+        <Box sx={{ p: { xs: 2, md: 3 }, flex: 1, overflow: 'auto' }}>
+          <Outlet />
+        </Box>
       </Box>
     </Box>
   );

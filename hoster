@@ -1,20 +1,47 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+
+"""
+Hoster CLI — Payload Hosting Tool
+
+Modes:
+  hoster ui                   → Interactive TUI (requires: pip install rich questionary)
+  hoster <command> [args]     → Classic CLI mode
+
+Commands:
+  setup       Configure the client
+  up          Upload a file or inline content  (--watch to auto-re-upload on change)
+  ls          List routes
+  rm          Delete a route
+  edit        Edit a route
+  clone       Clone a route
+  tag         Add a tag to a route
+  untag       Remove a tag from a route
+  test        Test a route (HTTP request)
+  cors        Configure CORS on a route
+  headers     Configure custom response headers on a route
+  export      Export all routes to JSON
+  import      Import routes from JSON
+  logs        Watch access logs live  ([route] to filter by route)
+  url         Get the URL of a route
+  open        Open route URL in the default browser
+  completion  Print shell completion script (bash/zsh)
+"""
 
 import os
 import sys
 import json
+import base64
 import random
 import string
+import hashlib
 import argparse
 import requests
 import configparser
 import time
+import webbrowser
 
-# Configuration file path
 CONFIG_FILE = os.path.expanduser("~/.payload_hoster.conf")
 
-# Content type mappings by extension
 CONTENT_TYPES = {
     ".html": "text/html",
     ".txt": "text/plain",
@@ -28,662 +55,1332 @@ CONTENT_TYPES = {
     ".sh": "text/x-sh",
     ".php": "application/x-httpd-php",
     ".yaml": "application/x-yaml",
-    ".yml": "application/x-yaml"
+    ".yml": "application/x-yaml",
+    ".pdf": "application/pdf",
+    ".zip": "application/zip",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".mp4": "video/mp4",
+    ".mp3": "audio/mpeg",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
 }
 
-# Content type shortcuts
 CONTENT_TYPE_SHORTCUTS = {
-    "html": "text/html",
-    "txt": "text/plain",
-    "text": "text/plain",
-    "plain": "text/plain",
-    "js": "application/javascript",
-    "javascript": "application/javascript",
-    "json": "application/json",
-    "xml": "application/xml",
-    "css": "text/css",
-    "csv": "text/csv",
-    "md": "text/markdown",
-    "markdown": "text/markdown",
-    "py": "text/x-python",
-    "python": "text/x-python",
-    "sh": "text/x-sh",
-    "bash": "text/x-sh",
+    "html": "text/html", "txt": "text/plain", "text": "text/plain",
+    "plain": "text/plain", "js": "application/javascript",
+    "javascript": "application/javascript", "json": "application/json",
+    "xml": "application/xml", "css": "text/css", "csv": "text/csv",
+    "md": "text/markdown", "markdown": "text/markdown",
+    "py": "text/x-python", "python": "text/x-python",
+    "sh": "text/x-sh", "bash": "text/x-sh",
     "php": "application/x-httpd-php",
-    "yaml": "application/x-yaml",
-    "yml": "application/x-yaml"
+    "yaml": "application/x-yaml", "yml": "application/x-yaml",
+    "pdf": "application/pdf", "zip": "application/zip",
+    "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+    "gif": "image/gif", "svg": "image/svg+xml",
 }
 
-# Default content type
 DEFAULT_CONTENT_TYPE = "text/plain"
 
-class PayloadHosterClient:
+def _derive_key(password: str) -> bytes:
+    return hashlib.scrypt(
+        password.encode("utf-8"),
+        salt=b"hoster-salt",
+        n=16384, r=8, p=1, dklen=32,
+    )
+
+def _encrypt_export(data: str, password: str) -> dict:
+    try:
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        from cryptography.hazmat.backends import default_backend
+        from cryptography.hazmat.primitives import padding as sym_padding
+    except ImportError:
+        print("Error: 'cryptography' package required for encryption. pip install cryptography")
+        sys.exit(1)
+    key = _derive_key(password)
+    iv = os.urandom(16)
+    padder = sym_padding.PKCS7(128).padder()
+    padded = padder.update(data.encode("utf-8")) + padder.finalize()
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    enc = cipher.encryptor()
+    encrypted = enc.update(padded) + enc.finalize()
+    return {"encrypted": True, "iv": iv.hex(), "data": encrypted.hex()}
+
+def _decrypt_export(payload: dict, password: str) -> str:
+    try:
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        from cryptography.hazmat.backends import default_backend
+        from cryptography.hazmat.primitives import padding as sym_padding
+    except ImportError:
+        print("Error: 'cryptography' package required for decryption. pip install cryptography")
+        sys.exit(1)
+    key = _derive_key(password)
+    iv = bytes.fromhex(payload["iv"])
+    encrypted = bytes.fromhex(payload["data"])
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    dec = cipher.decryptor()
+    padded = dec.update(encrypted) + dec.finalize()
+    unpadder = sym_padding.PKCS7(128).unpadder()
+    data = unpadder.update(padded) + unpadder.finalize()
+    return data.decode("utf-8")
+
+try:
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.text import Text
+    from rich.syntax import Syntax
+    from rich import box as rich_box
+    _console = Console()
+    RICH = True
+except ImportError:
+    RICH = False
+    _console = None
+
+try:
+    import questionary
+    from questionary import Style as QStyle
+    QUESTIONARY = True
+except ImportError:
+    QUESTIONARY = False
+
+_TUI_STYLE = None
+if QUESTIONARY:
+    _TUI_STYLE = QStyle([
+        ("qmark",        "fg:#6366f1 bold"),
+        ("question",     "fg:#e2e8f0 bold"),
+        ("answer",       "fg:#22d3ee bold"),
+        ("pointer",      "fg:#6366f1 bold"),
+        ("highlighted",  "fg:#6366f1 bold"),
+        ("selected",     "fg:#22d3ee"),
+        ("separator",    "fg:#444466"),
+        ("instruction",  "fg:#64748b"),
+    ])
+
+def _print(msg, style=None):
+    if RICH:
+        _console.print(msg, style=style)
+    else:
+        print(msg)
+
+def _ok(msg):    _print(f"[bold green]✓[/] {msg}" if RICH else f"✓ {msg}")
+def _err(msg):   _print(f"[bold red]✗[/] {msg}" if RICH else f"✗ {msg}")
+def _info(msg):  _print(f"[bold cyan]→[/] {msg}" if RICH else f"→ {msg}")
+def _warn(msg):  _print(f"[bold yellow]![/] {msg}" if RICH else f"! {msg}")
+
+METHOD_COLORS = {
+    "GET": "bright_green", "POST": "bright_cyan",
+    "PUT": "bright_yellow", "DELETE": "bright_red",
+    "PATCH": "magenta",
+}
+
+def _method_badge(method: str) -> str:
+    if not RICH:
+        return method
+    color = METHOD_COLORS.get(method.upper(), "white")
+    return f"[bold {color}]{method}[/]"
+
+class HosterClient:
     def __init__(self):
         self.config = configparser.ConfigParser()
         self.api_key = None
         self.server_url = None
-        self.api_path = None
-        self.load_config()
+        self.api_path = "/api/v1"
+        self._load_config()
 
-    def load_config(self):
-        """Load configuration from file if it exists"""
+    def _load_config(self):
         if os.path.exists(CONFIG_FILE):
             self.config.read(CONFIG_FILE)
-            if 'DEFAULT' in self.config:
-                self.api_key = self.config['DEFAULT'].get('api_key')
-                self.server_url = self.config['DEFAULT'].get('server_url')
-                self.api_path = self.config['DEFAULT'].get('api_path', '/api/api')
-                
-                # Normalize URLs and paths
-                if self.server_url and self.server_url.endswith('/'):
-                    self.server_url = self.server_url[:-1]
-                    
-                if self.api_path and not self.api_path.startswith('/'):
-                    self.api_path = '/' + self.api_path
-                    
-                if self.api_path and self.api_path.endswith('/'):
-                    self.api_path = self.api_path[:-1]
+            d = self.config["DEFAULT"]
+            if d.get("api_key"):
+                self.api_key    = d.get("api_key")
+                self.server_url = d.get("server_url", "").rstrip("/")
+                self.api_path   = d.get("api_path", "/api/v1")
+                if not self.api_path.startswith("/"):
+                    self.api_path = "/" + self.api_path
 
-    def save_config(self):
-        """Save configuration to file"""
-        if 'DEFAULT' not in self.config:
-            self.config['DEFAULT'] = {}
-        
-        self.config['DEFAULT']['api_key'] = self.api_key
-        self.config['DEFAULT']['server_url'] = self.server_url
-        self.config['DEFAULT']['api_path'] = self.api_path
-        
-        os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
-        with open(CONFIG_FILE, 'w') as configfile:
-            self.config.write(configfile)
-        
-        print(f"Configuration saved to {CONFIG_FILE}")
+    def save_config(self, api_key, server_url, api_path="/api/v1"):
+        self.api_key    = api_key
+        self.server_url = server_url.rstrip("/")
+        self.api_path   = api_path if api_path.startswith("/") else "/" + api_path
+        self.config["DEFAULT"] = {
+            "api_key":    self.api_key,
+            "server_url": self.server_url,
+            "api_path":   self.api_path,
+        }
+        with open(CONFIG_FILE, "w") as f:
+            self.config.write(f)
+        _ok(f"Config saved to {CONFIG_FILE}")
 
-    def setup(self, api_key, server_url, api_path=None):
-        """Set up the client with API key, server URL and API path"""
-        self.api_key = api_key
-        self.server_url = server_url
-        
-        # Normalize server URL
-        if self.server_url and self.server_url.endswith('/'):
-            self.server_url = self.server_url[:-1]
-        
-        # Extract API path from server URL if it contains a path
-        if api_path is None and '/' in self.server_url.replace('://', ''):
-            # Split the URL into base and path
-            parts = self.server_url.split('/')
-            if len(parts) > 3:  # More than just protocol and domain
-                base_url = '/'.join(parts[:3])  # protocol://domain
-                path = '/' + '/'.join(parts[3:])  # /path/to/api
-                self.server_url = base_url
-                # Make sure the path is just /api, not /api/v1 or anything else
-                if path == '/api':
-                    self.api_path = '/api/v1'
-                else:
-                    self.api_path = path
-            else:
-                self.api_path = '/api/v1'  # Default path
-        else:
-            # If API path is provided, use it, otherwise default to /api/v1
-            if api_path == '/api':
-                self.api_path = '/api/v1'
-            else:
-                self.api_path = api_path if api_path is not None else '/api/v1'
-        
-        # Normalize API path
-        if not self.api_path.startswith('/'):
-            self.api_path = '/' + self.api_path
-        if self.api_path.endswith('/'):
-            self.api_path = self.api_path[:-1]
-        
-        self.save_config()
-        
-        # Test connection
-        try:
-            response = self.make_request("GET", "/routes")
-            print(f"Connection successful! Found {len(response)} routes.")
-        except Exception as e:
-            print(f"Error connecting to server: {str(e)}")
-
-    def make_request(self, method, endpoint, data=None, files=None):
-        """Make an API request to the server"""
+    def _request(self, method, endpoint, data=None, params=None):
         if not self.api_key or not self.server_url:
-            print("Error: Client not configured. Run 'client.py setup --key <key> --server <url>' first.")
+            _err("Not configured. Run: hoster setup --key <key> --server <url>")
             sys.exit(1)
-        
-        # Make sure endpoint starts with a slash
-        if not endpoint.startswith('/'):
-            endpoint = '/' + endpoint
-        
-        # Determine the correct API path
-        api_path = self.api_path
-        
-        # If the API path doesn't already include /v1, add it
-        if not api_path.endswith('/v1') and not '/v1/' in api_path:
-            # If the path is /api, append /v1
-            if api_path == '/api':
-                api_path = '/api/v1'
-        
-        # Use the configured API path
-        url = f"{self.server_url}{api_path}{endpoint}"
-        headers = {"X-API-Key": self.api_key}
-        
+        ep = endpoint if endpoint.startswith("/") else "/" + endpoint
+        url = f"{self.server_url}{self.api_path}{ep}"
+        headers = {"X-API-Key": self.api_key, "Content-Type": "application/json"}
         try:
-            if method == "GET":
-                response = requests.get(url, headers=headers)
-            elif method == "POST":
-                response = requests.post(url, json=data, headers=headers)
-            elif method == "PUT":
-                response = requests.put(url, json=data, headers=headers)
-            elif method == "DELETE":
-                response = requests.delete(url, headers=headers)
-            else:
-                raise ValueError(f"Unsupported HTTP method: {method}")
-            
-            response.raise_for_status()
-            return response.json()
+            resp = requests.request(method, url, json=data, headers=headers,
+                                    params=params, timeout=15)
+            resp.raise_for_status()
+            return resp.json() if resp.content else {}
         except requests.exceptions.RequestException as e:
-            if hasattr(e.response, 'text'):
+            if hasattr(e, "response") and e.response is not None:
                 try:
-                    error_data = e.response.json()
-                    print(f"API Error: {error_data.get('message', str(e))}")
-                except:
-                    print(f"API Error: {e.response.text}")
+                    msg = e.response.json().get("message", e.response.text)
+                except Exception:
+                    msg = e.response.text
+                _err(f"API error: {msg}")
             else:
-                print(f"Request Error: {str(e)}")
+                _err(f"Request error: {e}")
             sys.exit(1)
 
-    def get_content_type(self, file_path, forced_content_type=None):
-        """Determine content type based on file extension or forced value"""
-        if forced_content_type:
-            # Check if it's a shortcut or a full content type
-            if '/' in forced_content_type:
-                # It's already a full content type
-                return forced_content_type
-            else:
-                # Try to match the shortcut
-                shortcut = forced_content_type.lower()
-                if shortcut in CONTENT_TYPE_SHORTCUTS:
-                    return CONTENT_TYPE_SHORTCUTS[shortcut]
-                else:
-                    print(f"Warning: Unknown content type shortcut '{shortcut}'. Using default content type.")
-                    return DEFAULT_CONTENT_TYPE
-        
-        # Determine by file extension
-        file_ext = os.path.splitext(file_path)[1].lower()
-        return CONTENT_TYPES.get(file_ext, DEFAULT_CONTENT_TYPE)
+    def get_routes(self, tag=None, search=None):
+        params = {}
+        if tag:    params["tag"]    = tag
+        if search: params["search"] = search
+        return self._request("GET", "/routes", params=params)
 
-    def generate_random_path(self, length=8):
-        """Generate a random path string"""
-        chars = string.ascii_lowercase + string.digits
-        return ''.join(random.choice(chars) for _ in range(length))
-        
-    def get_next_route_number(self):
-        """Get the next incremental number for route naming"""
-        # Get existing routes
-        routes = self.make_request("GET", "/routes")
-        
-        # Start with 1 if no routes exist
-        if not routes:
-            return 1
-            
-        # Find the highest number used in existing route names
-        highest_num = 0
-        
-        for route in routes:
-            name = route.get('name', '')
-            # Look for names that end with _N where N is a number
-            if '_' in name:
-                try:
-                    num_part = name.split('_')[-1]
-                    num = int(num_part)
-                    if num > highest_num:
-                        highest_num = num
-                except ValueError:
-                    # Not a number, ignore
-                    pass
-        
-        # Return the next number in sequence
-        return highest_num + 1
-    
-    def upload_content(self, content, content_type=None, permanent=False, custom_path=None):
-        """Upload content directly to the server"""
-        # Default content type for direct content
-        if content_type is None:
-            content_type = DEFAULT_CONTENT_TYPE
-        else:
-            # Convert shortcut to full content type if needed
-            if content_type in CONTENT_TYPE_SHORTCUTS:
-                content_type = CONTENT_TYPE_SHORTCUTS[content_type]
-        
-        # Generate a base name for the route
-        base_name = "content"
-        
-        # Get next incremental number for the route name
-        next_number = self.get_next_route_number()
-        
-        # Create a unique route name for the database with number AFTER the name
-        route_name = f"{base_name}_{next_number}"
-        
-        # Use custom path if provided, otherwise generate a random one
-        if custom_path:
-            # Ensure path starts with /
-            if not custom_path.startswith('/'):
-                custom_path = '/' + custom_path
-            route_path = custom_path
-        else:
-            # Generate random path for the URL
-            random_path = self.generate_random_path()
-            # The path remains without the number suffix
-            route_path = f"/{random_path}/{base_name}"
-        
-        if permanent:
-            category = "classic"
-        else:
-            category = "temporary"
-        
-        # Prepare data
-        data = {
-            "name": route_name,
-            "path": route_path,
-            "contentType": content_type,
-            "content": content,
-            "category": category
-        }
-        
-        # Upload to server
-        response = self.make_request("POST", "/routes", data)
-        
-        # Print only the full URL to the route
-        full_url = f"{self.server_url}{route_path}"
-        print(full_url)
-        
-        return response
-
-    def upload_file(self, file_path, content_type=None, permanent=False, custom_path=None):
-        """Upload a file to the server"""
-        
-        if not os.path.exists(file_path):
-            print(f"Error: File not found: {file_path}")
-            sys.exit(1)
-        
-        # Determine content type
-        file_content_type = self.get_content_type(file_path, content_type)
-        
-        # Read file content
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-        except UnicodeDecodeError:
-            # Try binary mode for non-text files
-            try:
-                with open(file_path, 'rb') as f:
-                    content = f.read().decode('latin1')
-            except Exception as e:
-                print(f"Error reading file: {str(e)}")
-                sys.exit(1)
-        
-        # Create route name from filename (without extension)
-        file_name = os.path.basename(file_path)
-        base_name = os.path.splitext(file_name)[0]
-        
-        # Get next incremental number for the route name
-        next_number = self.get_next_route_number()
-        
-        # Create a unique route name for the database with number AFTER the name
-        route_name = f"{base_name}_{next_number}"
-        
-        # Use custom path if provided, otherwise generate a random one
-        if custom_path:
-            # Ensure path starts with /
-            if not custom_path.startswith('/'):
-                custom_path = '/' + custom_path
-            route_path = custom_path
-        else:
-            # Generate random path for the URL
-            random_path = self.generate_random_path()
-            # The path remains without the number suffix
-            route_path = f"/{random_path}/{base_name}"
-        
-        if permanent:
-            category = "classic"
-        else:
-            category = "temporary"
-        
-        # Prepare data
-        data = {
-            "name": route_name,
-            "path": route_path,
-            "contentType": file_content_type,
-            "content": content,
-            "category": category
-        }
-        
-        # Upload to server
-        response = self.make_request("POST", "/routes", data)
-        
-        # Print only the full URL to the route
-        full_url = f"{self.server_url}{route_path}"
-        print(full_url)
-        
-        return response
-
-    def list_routes(self):
-        """List all routes on the server"""
-        routes = self.make_request("GET", "/routes")
-        
-        if not routes:
-            print("No routes found.")
-            return
-        
-        print(f"Found {len(routes)} routes:")
-        print("-" * 100)
-        print(f"{'ID':<24} {'Name':<15} {'Path':<25} {'Type':<15} {'Content Type':<20}")
-        print("-" * 100)
-        
-        for route in routes:
-            # Determine if the route is temporary or permanent
-            route_type = route.get('category', 'classic')
-            if route_type == 'temporary':
-                type_display = "Temporary"
-            else:
-                type_display = "Permanent"
-                
-            print(f"{route['_id']:<24} {route['name'][:15]:<15} {route['path'][:25]:<25} {type_display:<15} {route['contentType']:<20}")
-
-    def find_route_by_name(self, route_name):
-        """Find a route by name and return its ID and info"""
-        routes = self.make_request("GET", "/routes")
-        
-        if not routes:
-            return None, None
-            
-        # Look for an exact match on the name field first (preferred)
-        for route in routes:
-            if route['name'] == route_name:
-                return route['_id'], route
-        
-        # If no exact match on name, try matching on path as a fallback
-        for route in routes:
-            if route['path'] == f"/{route_name}" or route['path'] == route_name:
-                return route['_id'], route
-                
+    def find_route(self, identifier):
+        """Find route by name, path, or ID prefix."""
+        routes = self.get_routes()
+        for r in routes:
+            if r["_id"] == identifier:
+                return r["_id"], r
+        for r in routes:
+            if r["path"] == identifier or r["path"] == "/" + identifier:
+                return r["_id"], r
+        for r in routes:
+            if r["name"] == identifier:
+                return r["_id"], r
+        for r in routes:
+            if r["_id"].startswith(identifier):
+                return r["_id"], r
         return None, None
-        
-    def edit_route(self, route_name, new_content=None, content_file=None, new_name=None, new_category=None, new_content_type=None, new_path=None):
-        """Edit a route's properties (content, name, category, or content type)"""
-        # Check that at least one edit parameter is provided
-        if new_content is None and content_file is None and new_name is None and new_category is None and new_content_type is None and new_path is None:
-            print("Error: At least one of content, file, name, category, path, or content-type must be provided.")
-            return
-            
-        # Find the route by name
-        route_id, route_info = self.find_route_by_name(route_name)
-        
-        if not route_id:
-            print(f"Error: Route not found: {route_name}")
-            print("Use 'ls' command to see available routes.")
-            return
-            
-        # Get content from file if content_file is provided
-        content = new_content
-        if content_file:
-            try:
-                with open(content_file, 'r') as f:
-                    content = f.read()
-            except Exception as e:
-                print(f"Error reading file: {str(e)}")
-                return
-                
-        # Validate category if provided
-        if new_category and new_category not in ['temporary', 'permanent']:
-            print("Error: Category must be 'temporary' or 'permanent'.")
-            return
-            
-        # Validate content type if provided
-        if new_content_type:
-            # Check if it's a shortcut
-            if new_content_type in CONTENT_TYPE_SHORTCUTS:
-                new_content_type = CONTENT_TYPE_SHORTCUTS[new_content_type]
-            # Otherwise, assume it's a full MIME type
-                
-        # Prepare data for update
-        data = {}
-        if content is not None:
-            data["content"] = content
-        if new_name is not None:
-            data["name"] = new_name
-        if new_category is not None:
-            data["category"] = new_category
-        if new_content_type is not None:
-            data["contentType"] = new_content_type
-        if new_path is not None:
-            # Ensure path starts with /
-            if not new_path.startswith('/'):
-                new_path = '/' + new_path
-            data["path"] = new_path
-        
-        # Show what is being updated
-        updates = []
-        if content is not None:
-            updates.append("content")
-        if new_name is not None:
-            updates.append(f"name to '{new_name}'")
-        if new_category is not None:
-            updates.append(f"category to '{new_category}'")
-        if new_content_type is not None:
-            updates.append(f"content type to '{new_content_type}'")
-        if new_path is not None:
-            updates.append(f"path to '{new_path}'")
-        
-        # Update the route
-        try:
-            self.make_request("PUT", f"/routes/{route_id}", data)
-            print(f"Route '{route_name}' updated successfully.")
-            if updates:
-                print(f"Updated: {', '.join(updates)}")
-        except Exception as e:
-            print(f"Error updating route: {str(e)}")
-            
-    def delete_route(self, route_name):
-        """Delete a route by name"""
-        route_id, route_info = self.find_route_by_name(route_name)
-        
-        if not route_id:
-            print(f"Error: Route not found: {route_name}")
-            print("Use 'ls' command to see available routes.")
-            return
-        
-        # Delete the route
-        response = self.make_request("DELETE", f"/routes/{route_id}")
-        
-        if response and response.get('success', True):  # Assume success if no explicit failure
-            print(f"Route '{route_name}' deleted successfully.")
-        else:
-            error_msg = response.get('message', 'Unknown error') if response else 'Failed to delete route'
-            print(f"Error: {error_msg}")
-            
-    def watch_logs(self):
-        """Display logs in real-time using HTTP polling"""
-        if not self.server_url:
-            print("Error: Client not configured. Run 'client.py setup --key <key> --server <url>' first.")
+
+    def _require_route(self, identifier):
+        rid, info = self.find_route(identifier)
+        if not rid:
+            _err(f"Route not found: {identifier}")
             sys.exit(1)
-            
-        print("Watching logs in real-time...")
-        print("Press Ctrl+C to stop watching logs.")
-        print("-" * 80)
-        
-        try:
-            # Get initial logs
-            last_timestamp = None
-            while True:
-                # Get logs from server
-                logs = self.make_request("GET", "/logs")
-                
-                # Ensure logs is in the correct format
-                if isinstance(logs, str):
-                    try:
-                        logs = json.loads(logs)
-                    except json.JSONDecodeError:
-                        print(f"Error: Invalid logs format received from server")
-                        time.sleep(2)
-                        continue
-                
-                # If logs is a dictionary with a 'logs' key, extract the logs
-                if isinstance(logs, dict) and 'logs' in logs:
-                    logs = logs.get('logs', [])
-                
-                # If logs is still not a list, try to extract logs from other common keys
-                if isinstance(logs, dict):
-                    for key in ['data', 'items', 'results', 'records']:
-                        if key in logs and isinstance(logs[key], list):
-                            logs = logs[key]
-                            break
-                
-                # If logs is still not a list, print error and continue
-                if not isinstance(logs, list):
-                    print(f"Error: Could not extract logs from response: {logs}")
-                    time.sleep(2)
-                    continue
-                
-                if logs:
-                    # Filter out non-dictionary items
-                    logs = [log for log in logs if isinstance(log, dict)]
-                    
-                    # Sort logs by timestamp (if available)
-                    logs.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
-                    
-                    # Display only new logs
-                    new_logs = []
-                    for log in logs:
-                        timestamp = log.get('timestamp', '')
-                        if last_timestamp is None or timestamp > last_timestamp:
-                            new_logs.append(log)
-                    
-                    if new_logs:
-                        # Update last timestamp
-                        last_timestamp = new_logs[0].get('timestamp', '')
-                        
-                        # Display new logs in reverse order (oldest first)
-                        for log in reversed(new_logs):
-                            # Get raw request
-                            raw_request = log.get('rawRequest', 'No raw request available')
-                            timestamp = log.get('timestamp', 'Unknown time')
-                            ip = log.get('ip', 'Unknown IP')
-                            method = log.get('method', 'GET')
-                            path = log.get('path', '/')
-                            
-                            # Print raw request with timestamp
-                            print(f"\n\033[1m[{timestamp}] {ip} - {method} {path}\033[0m")
-                            print("-" * 80)
-                            print(raw_request)
-                            print("-" * 80)
-                
-                # Wait before polling again
-                time.sleep(1)
-                
-        except KeyboardInterrupt:
-            print("\nLog watching stopped.")
-        except Exception as e:
-            print(f"\nError watching logs: {str(e)}")
-            print("Make sure the server is running and the API is accessible.")
-                
-    def get_route_url(self, route_name):
-        """Get the full URL for a route"""
-        route_id, route_info = self.find_route_by_name(route_name)
-        
-        if not route_id:
-            print(f"Error: Route not found: {route_name}")
-            print("Use 'ls' command to see available routes.")
+        return rid, info
+
+    def _random_path(self, length=8):
+        return "/" + "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
+
+    def _ct_from_file(self, path, forced=None):
+        if forced:
+            if "/" in forced:
+                return forced
+            return CONTENT_TYPE_SHORTCUTS.get(forced.lower(), DEFAULT_CONTENT_TYPE)
+        ext = os.path.splitext(path)[1].lower()
+        return CONTENT_TYPES.get(ext, DEFAULT_CONTENT_TYPE)
+
+    def upload_content(self, content, content_type=None, permanent=False,
+                       path=None, tags=None, encoding="text",
+                       custom_headers=None, content_disposition=None):
+        ct = CONTENT_TYPE_SHORTCUTS.get(content_type, content_type) if content_type else DEFAULT_CONTENT_TYPE
+        route_path = path if path else self._random_path()
+        if not route_path.startswith("/"):
+            route_path = "/" + route_path
+        data = {
+            "path":               route_path,
+            "name":               route_path.lstrip("/") or "route",
+            "contentType":        ct,
+            "contentEncoding":    encoding,
+            "content":            content,
+            "category":           "classic" if permanent else "temporary",
+            "tags":               tags or [],
+            "customHeaders":      custom_headers or [],
+            "contentDisposition": content_disposition or "",
+        }
+        self._request("POST", "/routes", data)
+        url = f"{self.server_url}{route_path}"
+        if RICH:
+            _console.print(f"[bold green]{url}[/]")
+        else:
+            print(url)
+        return url
+
+    def upload_file_text(self, file_path, content_type=None, permanent=False,
+                         path=None, tags=None, encoding="text",
+                         custom_headers=None, content_disposition=None):
+        """Upload a text file (encoding: text/base64/hex — content typed into editor)."""
+        ct = self._ct_from_file(file_path, content_type)
+        name = os.path.splitext(os.path.basename(file_path))[0]
+        route_path = path if path else self._random_path()
+        if not route_path.startswith("/"):
+            route_path = "/" + route_path
+
+        if encoding == "base64":
+            with open(file_path, "rb") as f:
+                content = base64.b64encode(f.read()).decode("ascii")
+        elif encoding == "hex":
+            with open(file_path, "rb") as f:
+                content = f.read().hex()
+        else:
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+            except UnicodeDecodeError:
+                _warn("Binary file detected — use --file-mode to serve as raw binary, or --base64/--hex for encoded text.")
+                sys.exit(1)
+
+        data = {
+            "path":               route_path,
+            "name":               name,
+            "contentType":        ct,
+            "contentEncoding":    encoding,
+            "content":            content,
+            "category":           "classic" if permanent else "temporary",
+            "tags":               tags or [],
+            "customHeaders":      custom_headers or [],
+            "contentDisposition": content_disposition or "",
+        }
+        self._request("POST", "/routes", data)
+        url = f"{self.server_url}{route_path}"
+        if RICH:
+            _console.print(f"[bold green]{url}[/]")
+        else:
+            print(url)
+        return url
+
+    def upload_file_binary(self, file_path, content_type=None, permanent=False,
+                           path=None, tags=None,
+                           content_disposition=None, custom_headers=None):
+        """Upload a file in 'file' mode — served as raw binary."""
+        if not os.path.exists(file_path):
+            _err(f"File not found: {file_path}")
+            sys.exit(1)
+        ct = self._ct_from_file(file_path, content_type)
+        file_name = os.path.basename(file_path)
+        file_size = os.path.getsize(file_path)
+        name = os.path.splitext(file_name)[0]
+        route_path = path if path else self._random_path()
+        if not route_path.startswith("/"):
+            route_path = "/" + route_path
+
+        with open(file_path, "rb") as f:
+            content = base64.b64encode(f.read()).decode("ascii")
+
+        cd = content_disposition
+        if cd is None:
+            cd = f'attachment; filename="{file_name}"'
+
+        data = {
+            "path":               route_path,
+            "name":               name,
+            "contentType":        ct,
+            "contentEncoding":    "file",
+            "content":            content,
+            "fileName":           f"{file_name} ({file_size / 1024:.1f} KB)",
+            "contentDisposition": cd,
+            "category":           "classic" if permanent else "temporary",
+            "tags":               tags or [],
+            "customHeaders":      custom_headers or [],
+        }
+        self._request("POST", "/routes", data)
+        url = f"{self.server_url}{route_path}"
+        _info(f"File: {file_name} ({file_size / 1024:.1f} KB)")
+        if RICH:
+            _console.print(f"[bold green]{url}[/]")
+        else:
+            print(url)
+        return url
+
+    def list_routes(self, tag=None, search=None):
+        routes = self.get_routes(tag=tag, search=search)
+        if not routes:
+            _info("No routes found.")
+            return routes
+
+        if RICH:
+            table = Table(
+                show_header=True, header_style="bold #6366f1",
+                box=rich_box.ROUNDED, border_style="#2a2a3a",
+                expand=True, row_styles=["", "dim"],
+            )
+            table.add_column("Path",         style="bold #22d3ee", no_wrap=True, min_width=16)
+            table.add_column("Name",         style="white",        max_width=22)
+            table.add_column("Content-Type", style="#94a3b8",      max_width=22)
+            table.add_column("Enc",          style="#fbbf24",      width=8)
+            table.add_column("Cat",          width=7)
+            table.add_column("Tags",         style="#a78bfa",      max_width=20)
+            table.add_column("ID",           style="#3a3a4a",      no_wrap=True)
+            for r in routes:
+                cat = "[yellow]temp[/]" if r.get("category") == "temporary" else "[green]classic[/]"
+                enc = r.get("contentEncoding", "text")
+                enc_display = f"[bold]{enc}[/]" if enc != "text" else "[dim]text[/]"
+                tags_str = ", ".join(r.get("tags", [])) or "[dim]-[/]"
+                table.add_row(
+                    r["path"], r["name"], r.get("contentType", ""),
+                    enc_display, cat, tags_str, r["_id"],
+                )
+            _console.print(table)
+            _console.print(f"[dim]{len(routes)} route(s)[/]")
+        else:
+            print(f"{'Path':<25} {'Name':<20} {'Type':<22} {'Enc':<8} {'Cat':<8} {'Tags':<20} ID")
+            print("-" * 120)
+            for r in routes:
+                cat   = "temp" if r.get("category") == "temporary" else "classic"
+                enc   = r.get("contentEncoding", "text")
+                tags  = ", ".join(r.get("tags", [])) or "-"
+                print(f"{r['path'][:25]:<25} {r['name'][:20]:<20} {r.get('contentType','')[:22]:<22} {enc[:8]:<8} {cat:<8} {tags[:20]:<20} {r['_id']}")
+            print(f"\n{len(routes)} route(s)")
+        return routes
+
+    def delete_route(self, identifier):
+        rid, info = self._require_route(identifier)
+        self._request("DELETE", f"/routes/{rid}")
+        _ok(f"Deleted: {info['path']}")
+
+    def edit_route(self, identifier, **kwargs):
+        rid, info = self._require_route(identifier)
+        data = {k: v for k, v in kwargs.items() if v is not None}
+        if not data:
+            _err("Nothing to update.")
             return
-            
-        # Extract the base URL without any API path
-        base_url = self.server_url
-        if '/api' in base_url:
-            base_url = base_url.split('/api')[0]
-            
-        # Get the route path and construct the full URL
-        route_path = route_info['path']
-        full_url = f"{base_url}{route_path}"
-        
-        # Just print the URL, nothing else
-        print(full_url)
+        if "content_type" in data:
+            ct = data.pop("content_type")
+            data["contentType"] = CONTENT_TYPE_SHORTCUTS.get(ct, ct)
+        if "tags" in data and isinstance(data["tags"], str):
+            data["tags"] = [t.strip() for t in data["tags"].split(",") if t.strip()]
+        if "custom_headers" in data:
+            data["customHeaders"] = data.pop("custom_headers")
+        if "content_disposition" in data:
+            data["contentDisposition"] = data.pop("content_disposition")
+        self._request("PUT", f"/routes/{rid}", data)
+        _ok(f"Route updated: {info['path']}")
+
+    def clone_route(self, identifier, new_path=None):
+        rid, info = self._require_route(identifier)
+
+        route_path = new_path if new_path else self._random_path()
+        if not route_path.startswith("/"):
+            route_path = "/" + route_path
+        data = {
+            "path":               route_path,
+            "name":               info["name"] + " (copy)",
+            "contentType":        info["contentType"],
+            "contentEncoding":    info.get("contentEncoding", "text"),
+            "content":            info["content"],
+            "category":           info["category"],
+            "tags":               info.get("tags", []),
+            "corsConfig":         info.get("corsConfig", {}),
+            "customHeaders":      info.get("customHeaders", []),
+            "fileName":           info.get("fileName", ""),
+            "contentDisposition": info.get("contentDisposition", ""),
+        }
+        self._request("POST", "/routes", data)
+        _ok(f"Cloned as: {self.server_url}{route_path}")
+
+    def tag_route(self, identifier, tag, remove=False):
+        rid, info = self._require_route(identifier)
+        tags = list(info.get("tags", []))
+        if remove:
+            if tag in tags:
+                tags.remove(tag)
+                self._request("PUT", f"/routes/{rid}", {"tags": tags})
+                _ok(f"Tag '{tag}' removed from {info['path']}")
+            else:
+                _warn(f"Tag '{tag}' not on {info['path']}")
+        else:
+            if tag not in tags:
+                tags.append(tag)
+                self._request("PUT", f"/routes/{rid}", {"tags": tags})
+                _ok(f"Tag '{tag}' added to {info['path']}")
+            else:
+                _warn(f"Tag '{tag}' already on {info['path']}")
+
+    def set_cors(self, identifier, origin=None, methods=None,
+                 allow_headers=None, disable=False):
+        rid, info = self._require_route(identifier)
+        cors = dict(info.get("corsConfig", {}))
+        if disable:
+            cors["enabled"] = False
+        else:
+            cors["enabled"] = True
+            if origin:        cors["allowOrigin"]  = origin
+            if methods:       cors["allowMethods"] = methods
+            if allow_headers: cors["allowHeaders"] = allow_headers
+        self._request("PUT", f"/routes/{rid}", {"corsConfig": cors})
+        _ok(f"CORS updated for {info['path']}")
+
+    def set_headers(self, identifier, headers_list, replace=False):
+        """headers_list: list of 'Key: Value' strings."""
+        rid, info = self._require_route(identifier)
+        parsed = []
+        for h in headers_list:
+            if ":" in h:
+                k, _, v = h.partition(":")
+                parsed.append({"key": k.strip(), "value": v.strip()})
+        existing = [] if replace else list(info.get("customHeaders", []))
+        merged = {h["key"]: h["value"] for h in existing}
+        for h in parsed:
+            merged[h["key"]] = h["value"]
+        self._request("PUT", f"/routes/{rid}", {
+            "customHeaders": [{"key": k, "value": v} for k, v in merged.items()]
+        })
+        _ok(f"Custom headers updated for {info['path']}")
+
+    def test_route(self, identifier, method="GET", body=None, extra_headers=None):
+        _, info = self._require_route(identifier)
+        url = f"{self.server_url}{info['path']}"
+        kwargs = {"timeout": 10}
+        if body and method != "GET":
+            try:    kwargs["json"] = json.loads(body)
+            except: kwargs["data"] = body
+        if extra_headers:
+            h = {}
+            for hdr in extra_headers:
+                if ":" in hdr:
+                    k, _, v = hdr.partition(":")
+                    h[k.strip()] = v.strip()
+            kwargs["headers"] = h
+        try:
+            resp = requests.request(method, url, **kwargs)
+            if RICH:
+                color = "green" if resp.status_code < 300 else "yellow" if resp.status_code < 400 else "red"
+                _console.print(Panel(
+                    f"[bold {color}]{resp.status_code} {resp.reason}[/]\n"
+                    f"[dim]Content-Type:[/] {resp.headers.get('content-type', '?')}\n"
+                    f"[dim]Size:[/] {len(resp.content)} bytes",
+                    title=f"{_method_badge(method)} [bold]{url}[/]",
+                    border_style="#2a2a3a",
+                ))
+                try:
+                    body_text = resp.text[:2000]
+                    ct = resp.headers.get("content-type", "")
+                    if "json" in ct:
+                        syn = Syntax(json.dumps(resp.json(), indent=2)[:2000], "json",
+                                     theme="one-dark", line_numbers=False)
+                        _console.print(syn)
+                    elif "html" in ct:
+                        syn = Syntax(body_text, "html", theme="one-dark", line_numbers=False)
+                        _console.print(syn)
+                    else:
+                        _console.print(body_text)
+                except Exception:
+                    _console.print("[dim][binary content][/]")
+            else:
+                print(f"Status: {resp.status_code} {resp.reason}")
+                print(f"Content-Type: {resp.headers.get('content-type', '?')}")
+                print(f"Size: {len(resp.content)} bytes")
+                print("-" * 60)
+                try:
+                    print(resp.text[:1000])
+                except Exception:
+                    print("[binary]")
+        except requests.exceptions.RequestException as e:
+            _err(f"Request failed: {e}")
+
+    def get_url(self, identifier):
+        _, info = self._require_route(identifier)
+        url = f"{self.server_url}{info['path']}"
+        print(url)
+        return url
+
+    def export_routes(self, output_file=None, password=None):
+        routes = self.get_routes()
+        export_data = {
+            "version":    1,
+            "exportedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "routes": [{
+                "path":               r["path"],
+                "name":               r["name"],
+                "category":           r["category"],
+                "contentType":        r["contentType"],
+                "contentEncoding":    r.get("contentEncoding", "text"),
+                "content":            r["content"],
+                "tags":               r.get("tags", []),
+                "corsConfig":         r.get("corsConfig", {}),
+                "customHeaders":      r.get("customHeaders", []),
+                "fileName":           r.get("fileName", ""),
+                "contentDisposition": r.get("contentDisposition", ""),
+            } for r in routes],
+        }
+        if password:
+            output_data = _encrypt_export(json.dumps(export_data), password)
+        else:
+            output_data = export_data
+
+        out = output_file or "hoster-export.json"
+        with open(out, "w") as f:
+            json.dump(output_data, f, indent=2)
+        _ok(f"Exported {len(routes)} route(s) → {out}")
+
+    def import_routes(self, input_file, password=None, overwrite=False):
+        if not os.path.exists(input_file):
+            _err(f"File not found: {input_file}")
+            sys.exit(1)
+        with open(input_file, "r") as f:
+            payload = json.load(f)
+
+        if payload.get("encrypted"):
+            if not password:
+                _err("Export is encrypted — provide --password")
+                sys.exit(1)
+            try:
+                data = json.loads(_decrypt_export(payload, password))
+            except Exception as e:
+                _err(f"Decryption failed: {e}")
+                sys.exit(1)
+        else:
+            data = payload
+
+        routes = data.get("routes", [])
+        existing = {r["path"]: r["_id"] for r in self.get_routes()}
+        created = updated = skipped = errors = 0
+
+        for r in routes:
+            try:
+                if r["path"] in existing:
+                    if overwrite:
+                        self._request("PUT", f"/routes/{existing[r['path']]}", {
+                            "name":               r["name"],
+                            "contentType":        r["contentType"],
+                            "contentEncoding":    r.get("contentEncoding", "text"),
+                            "content":            r["content"],
+                            "tags":               r.get("tags", []),
+                            "customHeaders":      r.get("customHeaders", []),
+                            "fileName":           r.get("fileName", ""),
+                            "contentDisposition": r.get("contentDisposition", ""),
+                        })
+                        updated += 1
+                    else:
+                        skipped += 1
+                else:
+                    self._request("POST", "/routes", {
+                        "path":               r["path"],
+                        "name":               r["name"],
+                        "category":           r.get("category", "classic"),
+                        "contentType":        r["contentType"],
+                        "contentEncoding":    r.get("contentEncoding", "text"),
+                        "content":            r["content"],
+                        "tags":               r.get("tags", []),
+                        "customHeaders":      r.get("customHeaders", []),
+                        "fileName":           r.get("fileName", ""),
+                        "contentDisposition": r.get("contentDisposition", ""),
+                    })
+                    created += 1
+            except Exception as e:
+                _err(f"  {r['path']}: {e}")
+                errors += 1
+
+        _ok(f"Import done — created: {created}, updated: {updated}, skipped: {skipped}, errors: {errors}")
+
+    def watch_logs(self, route_filter=None):
+        filter_label = f" for {route_filter}" if route_filter else ""
+        _info(f"Watching logs{filter_label}… (Ctrl+C to stop)")
+
+        filter_path = None
+        if route_filter:
+            _, info = self._require_route(route_filter)
+            filter_path = info.get("path", "")
+        last_ts = None
+        try:
+            while True:
+                result = self._request("GET", "/logs")
+                logs = result.get("logs", result) if isinstance(result, dict) else result
+                if isinstance(logs, list):
+                    if filter_path:
+                        logs = [l for l in logs if l.get("path", "") == filter_path]
+                    logs.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+                    new = [l for l in logs
+                           if last_ts is None or l.get("timestamp", "") > last_ts]
+                    if new:
+                        last_ts = new[0].get("timestamp", "")
+                        for log in reversed(new):
+                            ts     = log.get("timestamp", "")
+                            ip     = log.get("ip", "?")
+                            method = log.get("method", "GET")
+                            if RICH:
+                                _console.rule(
+                                    f"{_method_badge(method)} [bold #22d3ee]{ip}[/]  "
+                                    f"[dim]{ts}[/]",
+                                    style="#2a2a3a",
+                                )
+                                raw = log.get("rawRequest", "")
+                                if raw:
+                                    _console.print(raw, style="#94a3b8")
+                            else:
+                                print(f"\n[{ts}] {ip} — {method}")
+                                print(log.get("rawRequest", ""))
+                time.sleep(1)
+        except KeyboardInterrupt:
+            _info("Stopped.")
+
+    def check_connection(self):
+        try:
+            routes = self.get_routes()
+            return True, len(routes)
+        except SystemExit:
+            return False, 0
+
+class HosterTUI:
+    def __init__(self, client: HosterClient):
+        self.c = client
+
+    def _ask(self, fn, *args, **kwargs):
+        kwargs.setdefault("style", _TUI_STYLE)
+        try:
+            result = fn(*args, **kwargs).ask()
+            if result is None:
+                raise KeyboardInterrupt
+            return result
+        except KeyboardInterrupt:
+            _info("Cancelled.")
+            return None
+
+    def run(self):
+        if not RICH or not QUESTIONARY:
+            _err("TUI requires: pip install rich questionary")
+            sys.exit(1)
+
+        ok, n_routes = self.c.check_connection()
+        _console.print(Panel(
+            f"[bold #6366f1]Hoster[/] [dim]— Payload Hosting Manager[/]\n"
+            f"[dim]Server:[/] {self.c.server_url}\n"
+            f"[dim]Routes:[/] {n_routes if ok else '[red]unreachable[/]'}",
+            border_style="#2a2a3a", padding=(0, 2),
+        ))
+
+        MENU = [
+            ("📋  List Routes",         self.ui_list),
+            ("⬆   Upload",              self.ui_upload),
+            ("✏   Edit Route",          self.ui_edit),
+            ("🗑   Delete Route",        self.ui_delete),
+            ("📋→  Clone Route",         self.ui_clone),
+            ("▶   Test Route",          self.ui_test),
+            ("🏷   Tag / Untag",         self.ui_tag),
+            ("🔒  CORS",                self.ui_cors),
+            ("📤  Export",              self.ui_export),
+            ("📥  Import",              self.ui_import),
+            ("📡  Watch Logs",          self.c.watch_logs),
+            ("⚙   Settings",            self.ui_settings),
+            ("✖   Quit",               None),
+        ]
+        choices = [m[0] for m in MENU]
+
+        while True:
+            choice = self._ask(questionary.select, "What do you want to do?", choices=choices)
+            if choice is None or choice == choices[-1]:
+                break
+            for label, fn in MENU:
+                if label == choice and fn:
+                    try:
+                        fn()
+                    except SystemExit:
+                        pass
+                    break
+
+    def _select_route(self, prompt="Select a route"):
+        routes = self.c.get_routes()
+        if not routes:
+            _info("No routes available.")
+            return None
+        choices = [f"{r['path']}  [{r.get('contentType','?')}]  {r['name']}"
+                   for r in routes]
+        choice = self._ask(questionary.select, prompt, choices=choices + ["↩ Back"])
+        if not choice or choice == "↩ Back":
+            return None
+        idx = choices.index(choice)
+        return routes[idx]
+
+    def ui_list(self):
+        tag = self._ask(questionary.text, "Filter by tag (leave blank for all):")
+        if tag is None:
+            return
+        routes = self.c.list_routes(tag=tag.strip() or None)
+        if routes:
+            route = self._select_route("Open a route for details / actions?")
+            if route:
+                self._route_actions(route)
+
+    def _route_actions(self, route):
+        ACTIONS = [
+            "🌐  Open URL",
+            "▶   Test",
+            "✏   Edit",
+            "📋→  Clone",
+            "🗑   Delete",
+            "↩  Back",
+        ]
+        action = self._ask(questionary.select,
+                           f"Actions for {route['path']}:", choices=ACTIONS)
+        if not action or "Back" in action:
+            return
+        if "URL" in action:
+            print(f"{self.c.server_url}{route['path']}")
+        elif "Test" in action:
+            method = self._ask(questionary.select, "Method:",
+                               choices=["GET", "POST", "PUT", "DELETE", "PATCH"])
+            if method:
+                self.c.test_route(route["_id"], method=method)
+        elif "Edit" in action:
+            self._do_edit(route["_id"], route["path"])
+        elif "Clone" in action:
+            new_path = self._ask(questionary.text,
+                                 "New path (leave blank for random):")
+            if new_path is not None:
+                self.c.clone_route(route["_id"], new_path.strip() or None)
+        elif "Delete" in action:
+            confirm = self._ask(questionary.confirm,
+                                f"Delete {route['path']}?", default=False)
+            if confirm:
+                self.c.delete_route(route["_id"])
+
+    def ui_upload(self):
+        mode = self._ask(questionary.select, "Upload mode:",
+                         choices=["Text / inline content", "Text file (text/base64/hex)", "Binary file (file mode)", "↩ Back"])
+        if not mode or "Back" in mode:
+            return
+
+        path_in = self._ask(questionary.text, "Route path (blank = random):")
+        if path_in is None:
+            return
+        path_in = path_in.strip() or None
+        tags_in = self._ask(questionary.text, "Tags (comma-separated, optional):")
+        if tags_in is None:
+            return
+        tags = [t.strip() for t in tags_in.split(",") if t.strip()]
+        permanent = self._ask(questionary.confirm, "Permanent route?", default=False)
+
+        if "inline" in mode:
+            ct = self._ask(questionary.text, "Content-Type (blank = text/plain):")
+            content = self._ask(questionary.text, "Content:")
+            if content is None:
+                return
+            self.c.upload_content(content, ct or None, permanent, path_in, tags)
+
+        elif "Text file" in mode:
+            file_path = self._ask(questionary.path, "File path:")
+            if not file_path or not os.path.exists(file_path):
+                _err("File not found.")
+                return
+            enc = self._ask(questionary.select, "Encoding:",
+                            choices=["text", "base64", "hex"])
+            if enc is None:
+                return
+            self.c.upload_file_text(file_path, permanent=permanent,
+                                    path=path_in, tags=tags, encoding=enc)
+
+        elif "Binary" in mode:
+            file_path = self._ask(questionary.path, "File path:")
+            if not file_path or not os.path.exists(file_path):
+                _err("File not found.")
+                return
+            cd_mode = self._ask(questionary.select, "Content-Disposition:",
+                                choices=["attachment (auto)", "inline", "none", "custom"])
+            if cd_mode is None:
+                return
+            if "auto" in cd_mode:
+                cd = None
+            elif cd_mode == "inline":
+                cd = "inline"
+            elif cd_mode == "none":
+                cd = ""
+            else:
+                cd = self._ask(questionary.text, 'Custom value (e.g. attachment; filename="x.pdf"):')
+            self.c.upload_file_binary(file_path, permanent=permanent,
+                                      path=path_in, tags=tags,
+                                      content_disposition=cd)
+
+    def ui_edit(self):
+        route = self._select_route("Select route to edit:")
+        if not route:
+            return
+        self._do_edit(route["_id"], route["path"])
+
+    def _do_edit(self, rid, rpath):
+        fields = self._ask(questionary.checkbox, f"What to edit on {rpath}?",
+                           choices=["name", "path", "content-type", "category", "tags", "content-disposition"])
+        if not fields:
+            return
+        data = {}
+        if "name" in fields:
+            v = self._ask(questionary.text, "New name:")
+            if v:
+                data["name"] = v
+        if "path" in fields:
+            v = self._ask(questionary.text, "New path:")
+            if v:
+                data["path"] = v if v.startswith("/") else "/" + v
+        if "content-type" in fields:
+            v = self._ask(questionary.text, "New content-type (shortcut or full MIME):")
+            if v:
+                data["contentType"] = CONTENT_TYPE_SHORTCUTS.get(v, v)
+        if "category" in fields:
+            v = self._ask(questionary.select, "Category:", choices=["classic", "temporary"])
+            if v:
+                data["category"] = v
+        if "tags" in fields:
+            v = self._ask(questionary.text, "Tags (comma-separated, replaces all):")
+            if v is not None:
+                data["tags"] = [t.strip() for t in v.split(",") if t.strip()]
+        if "content-disposition" in fields:
+            v = self._ask(questionary.text, "Content-Disposition value (blank = none):")
+            if v is not None:
+                data["contentDisposition"] = v
+        if data:
+            self.c._request("PUT", f"/routes/{rid}", data)
+            _ok(f"Route updated: {rpath}")
+
+    def ui_delete(self):
+        route = self._select_route("Select route to delete:")
+        if not route:
+            return
+        confirm = self._ask(questionary.confirm,
+                            f"Delete {route['path']}?", default=False)
+        if confirm:
+            self.c.delete_route(route["_id"])
+
+    def ui_clone(self):
+        route = self._select_route("Select route to clone:")
+        if not route:
+            return
+        new_path = self._ask(questionary.text, "New path (blank = random):")
+        if new_path is None:
+            return
+        self.c.clone_route(route["_id"], new_path.strip() or None)
+
+    def ui_test(self):
+        route = self._select_route("Select route to test:")
+        if not route:
+            return
+        method = self._ask(questionary.select, "Method:",
+                           choices=["GET", "POST", "PUT", "DELETE", "PATCH"])
+        if not method:
+            return
+        self.c.test_route(route["_id"], method=method)
+
+    def ui_tag(self):
+        route = self._select_route("Select route:")
+        if not route:
+            return
+        action = self._ask(questionary.select, "Action:",
+                           choices=["Add tag", "Remove tag", "↩ Back"])
+        if not action or "Back" in action:
+            return
+        tag = self._ask(questionary.text, "Tag:")
+        if not tag:
+            return
+        self.c.tag_route(route["_id"], tag.strip(), remove="Remove" in action)
+
+    def ui_cors(self):
+        route = self._select_route("Select route:")
+        if not route:
+            return
+        cors = route.get("corsConfig", {})
+        _info(f"Current: enabled={cors.get('enabled',False)}, "
+              f"origin={cors.get('allowOrigin','*')}")
+        action = self._ask(questionary.select, "Action:",
+                           choices=["Enable / update", "Disable", "↩ Back"])
+        if not action or "Back" in action:
+            return
+        if "Disable" in action:
+            self.c.set_cors(route["_id"], disable=True)
+        else:
+            origin  = self._ask(questionary.text,
+                                f"Allow-Origin (current: {cors.get('allowOrigin','*')}):")
+            methods = self._ask(questionary.text,
+                                f"Allow-Methods (current: {cors.get('allowMethods','')}):")
+            headers = self._ask(questionary.text,
+                                f"Allow-Headers (current: {cors.get('allowHeaders','')}):")
+            self.c.set_cors(route["_id"],
+                            origin=origin or None,
+                            methods=methods or None,
+                            allow_headers=headers or None)
+
+    def ui_export(self):
+        out  = self._ask(questionary.text, "Output file (blank = hoster-export.json):")
+        pwd  = self._ask(questionary.password, "Password (blank = no encryption):")
+        if out is None:
+            return
+        self.c.export_routes(out.strip() or None, pwd.strip() or None)
+
+    def ui_import(self):
+        inp = self._ask(questionary.path, "Import file:")
+        if not inp or not os.path.exists(inp):
+            _err("File not found.")
+            return
+        pwd = self._ask(questionary.password, "Password (blank = not encrypted):")
+        if pwd is None:
+            return
+        overwrite = self._ask(questionary.confirm,
+                              "Overwrite existing routes?", default=False)
+        self.c.import_routes(inp, pwd.strip() or None, overwrite)
+
+    def ui_settings(self):
+        _info(f"Server:   {self.c.server_url}")
+        _info(f"API path: {self.c.api_path}")
+        _info(f"API key:  {self.c.api_key[:8]}…" if self.c.api_key else "Not set")
+        reconf = self._ask(questionary.confirm, "Reconfigure?", default=False)
+        if reconf:
+            key    = self._ask(questionary.password, "API Key:")
+            server = self._ask(questionary.text,     "Server URL:")
+            apath  = self._ask(questionary.text,     "API path (default /api/v1):")
+            if key and server:
+                self.c.save_config(key, server, apath.strip() or "/api/v1")
+
+def _parse_headers(raw):
+    """Parse list of 'Key: Value' strings into [{"key":..,"value":..}]."""
+    result = []
+    for h in (raw or []):
+        if ":" in h:
+            k, _, v = h.partition(":")
+            result.append({"key": k.strip(), "value": v.strip()})
+    return result
+
+_COMMANDS = [
+    "ui", "setup", "up", "ls", "rm", "edit", "url", "clone",
+    "tag", "untag", "cors", "headers", "test", "export", "import",
+    "logs", "open", "completion",
+]
+
+_BASH_COMPLETION = """\
+_hoster_completion() {
+    local cur prev words cword
+    _init_completion || return
+    local commands="{cmds}"
+    if [[ $cword -eq 1 ]]; then
+        COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
+        return
+    fi
+    case "$prev" in
+        up) COMPREPLY=( $(compgen -f -- "$cur") ) ;;
+        open|rm|edit|url|clone|tag|untag|cors|headers|test|logs)
+            COMPREPLY=( $(hoster ls --names-only 2>/dev/null | compgen -W "$(cat)" -- "$cur") ) ;;
+    esac
+}
+complete -F _hoster_completion hoster
+"""
+
+_ZSH_COMPLETION = """\
+
+_hoster() {
+    local -a commands
+    commands=({cmds_zsh})
+    _arguments '1: :->cmd' '*: :->args'
+    case $state in
+        cmd) _describe 'command' commands ;;
+        args)
+            case $words[2] in
+                up) _files ;;
+                open|rm|edit|url|clone|tag|untag|cors|headers|test|logs)
+                    local routes
+                    routes=( $(hoster ls --names-only 2>/dev/null) )
+                    _describe 'route' routes ;;
+            esac
+            ;;
+    esac
+}
+_hoster
+"""
+
+def _print_completion(shell):
+    cmds = " ".join(_COMMANDS)
+    cmds_zsh = " ".join(f'"{c}"' for c in _COMMANDS)
+    if shell == "zsh":
+        print(_ZSH_COMPLETION.format(cmds_zsh=cmds_zsh))
+    else:
+        print(_BASH_COMPLETION.format(cmds=cmds))
+    if RICH:
+        _console.print(
+            f"\n[dim]Add to your ~/.{shell}rc:[/]\n"
+            f"[bold]  eval \"$(hoster completion --shell {shell})\"[/]",
+        )
+    else:
+        print(f"\n# Add to your ~/.{shell}rc:")
+        print(f'#   eval "$(hoster completion --shell {shell})"')
 
 def main():
-    parser = argparse.ArgumentParser(description="Payload Hoster Client")
-    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
-    
-    # Setup command
-    setup_parser = subparsers.add_parser("setup", help="Configure the client")
-    setup_parser.add_argument("--key", required=True, help="API key for authentication")
-    setup_parser.add_argument("--server", required=True, help="Server URL (e.g., http://localhost:3000)")
-    setup_parser.add_argument("--api-path", help="API path (e.g., /api or /api/api). If not specified, it will be extracted from the server URL if present.")
-    
-    # Upload command
-    upload_parser = subparsers.add_parser("up", help="Upload a file or content")
-    upload_parser.add_argument("file", nargs='?', help="File to upload")
-    upload_parser.add_argument("-c", "--content", help="Content to upload directly from command line")
-    upload_parser.add_argument("--stdin", action="store_true", help="Read content from standard input")
-    upload_parser.add_argument("--content-type", "--ct", help="Force content type (can be a shortcut like 'html', 'js', or full type like 'text/plain')")
-    upload_parser.add_argument("--permanent", action="store_true", help="Create a permanent route instead of a temporary one")
-    upload_parser.add_argument("--path", help="Custom path for the route (e.g., /my-custom-path)")
-    
-    # List command
-    list_parser = subparsers.add_parser("ls", help="List all routes")
-    
-    # Delete command
-    delete_parser = subparsers.add_parser("rm", help="Delete a route")
-    delete_parser.add_argument("route", help="Route name to delete")
-    
-    # La commande stats a été supprimée à la demande de l'utilisateur
-    
-    # Edit command
-    edit_parser = subparsers.add_parser("edit", help="Edit a route")
-    edit_parser.add_argument("route", help="Route name to edit")
-    edit_parser.add_argument("-c", "--content", help="New content for the route")
-    edit_parser.add_argument("-f", "--file", help="File containing new content for the route")
-    edit_parser.add_argument("-n", "--name", help="New name for the route")
-    edit_parser.add_argument("--category", choices=["temporary", "permanent"], help="New category for the route (temporary or permanent)")
-    edit_parser.add_argument("--content-type", "--ct", help="New content type for the route")
-    edit_parser.add_argument("--path", help="New custom path for the route (e.g., /my-custom-path)")
-    
-    # URL command
-    url_parser = subparsers.add_parser("url", help="Get the full URL for a route")
-    url_parser.add_argument("route", help="Route name to get URL for")
-    
-    # Logs command
-    logs_parser = subparsers.add_parser("logs", help="Watch access logs in real-time")
-    
+    parser = argparse.ArgumentParser(
+        prog="hoster",
+        description="Hoster CLI — Payload Hosting Tool",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    sub = parser.add_subparsers(dest="cmd", metavar="<command>")
+
+    sub.add_parser("ui", help="Interactive TUI mode")
+
+    p = sub.add_parser("setup", help="Configure the client")
+    p.add_argument("--key",      required=True, help="API key")
+    p.add_argument("--server",   required=True, help="Server URL")
+    p.add_argument("--api-path", default="/api/v1")
+
+    p = sub.add_parser("up", help="Upload file or content")
+    p.add_argument("file",           nargs="?", help="File path")
+    p.add_argument("-c", "--content",            help="Inline content string")
+    p.add_argument("--stdin",        action="store_true")
+    p.add_argument("--ct", "--content-type",     dest="content_type")
+    p.add_argument("--path",                     help="Route path")
+    p.add_argument("--permanent",    action="store_true")
+    p.add_argument("--tags",                     help="Comma-separated tags")
+    p.add_argument("--base64",       dest="force_base64", action="store_true",
+                   help="Encode as base64 text (user edits raw base64)")
+    p.add_argument("--hex",          dest="force_hex", action="store_true",
+                   help="Encode as hex text (user edits raw hex)")
+    p.add_argument("--file-mode",    dest="file_mode", action="store_true",
+                   help="Upload as binary file (encoding: file, served raw)")
+    p.add_argument("--disposition",  dest="content_disposition",
+                   help="Content-Disposition header value")
+    p.add_argument("-H", "--header", dest="headers", action="append",
+                   metavar="Key: Value", help="Custom response header (repeatable)")
+    p.add_argument("--watch", action="store_true",
+                   help="Watch the file and re-upload on change (polls every second)")
+
+    p = sub.add_parser("ls", help="List routes")
+    p.add_argument("--tag",        help="Filter by tag")
+    p.add_argument("--search",     help="Search in all fields")
+    p.add_argument("--names-only", action="store_true",
+                   help="Print only route names/paths (one per line, for shell completion)")
+
+    p = sub.add_parser("rm", help="Delete a route")
+    p.add_argument("route")
+
+    p = sub.add_parser("edit", help="Edit a route")
+    p.add_argument("route")
+    p.add_argument("-c",  "--content")
+    p.add_argument("-f",  "--file")
+    p.add_argument("-n",  "--name")
+    p.add_argument("--category", choices=["temporary", "classic"])
+    p.add_argument("--ct", "--content-type", dest="content_type")
+    p.add_argument("--path")
+    p.add_argument("--tags",        help="Comma-separated tags (replaces all)")
+    p.add_argument("--disposition", dest="content_disposition",
+                   help="Content-Disposition header")
+    p.add_argument("-H", "--header", dest="headers", action="append",
+                   metavar="Key: Value")
+
+    p = sub.add_parser("url", help="Print URL of a route")
+    p.add_argument("route")
+
+    p = sub.add_parser("clone", help="Clone a route")
+    p.add_argument("route")
+    p.add_argument("--path", help="New path (random if omitted)")
+
+    for cmd, help_text in [("tag", "Add a tag"), ("untag", "Remove a tag")]:
+        p = sub.add_parser(cmd, help=help_text)
+        p.add_argument("route")
+        p.add_argument("tag")
+
+    p = sub.add_parser("cors", help="Configure CORS on a route")
+    p.add_argument("route")
+    p.add_argument("--origin")
+    p.add_argument("--methods")
+    p.add_argument("--headers", dest="allow_headers")
+    p.add_argument("--disable", action="store_true")
+
+    p = sub.add_parser("headers", help="Configure custom response headers on a route")
+    p.add_argument("route")
+    p.add_argument("-H", "--header", dest="headers", action="append",
+                   required=True, metavar="Key: Value",
+                   help="Header to set (repeatable). e.g. -H 'X-Custom: value'")
+    p.add_argument("--replace", action="store_true",
+                   help="Replace all existing headers instead of merging")
+
+    p = sub.add_parser("test", help="Test a route with an HTTP request")
+    p.add_argument("route")
+    p.add_argument("--method", "-X", default="GET",
+                   choices=["GET", "POST", "PUT", "DELETE", "PATCH"])
+    p.add_argument("--body", "-d")
+    p.add_argument("-H", "--header", dest="headers", action="append",
+                   metavar="Key: Value")
+
+    p = sub.add_parser("export", help="Export all routes to JSON")
+    p.add_argument("output",   nargs="?", help="Output file")
+    p.add_argument("--password")
+
+    p = sub.add_parser("import", help="Import routes from JSON")
+    p.add_argument("input",    help="JSON export file")
+    p.add_argument("--password")
+    p.add_argument("--overwrite", action="store_true")
+
+    p = sub.add_parser("logs", help="Watch access logs live")
+    p.add_argument("route", nargs="?", help="Route name or path (optional)")
+
+    p = sub.add_parser("open", help="Open route URL in the default browser")
+    p.add_argument("route")
+
+    p = sub.add_parser("completion", help="Print shell completion script")
+    p.add_argument("--shell", choices=["bash", "zsh"], default="bash")
+
     args = parser.parse_args()
-    client = PayloadHosterClient()
-    
-    if args.command == "setup":
-        client.setup(args.key, args.server, args.api_path)
-    elif args.command == "up":
-        if args.stdin:
-            # Read from standard input
-            content = sys.stdin.read()
-            client.upload_content(content, args.content_type, args.permanent, args.path)
-        elif args.content:
-            # Upload content directly from command line
-            client.upload_content(args.content, args.content_type, args.permanent, args.path)
-        elif args.file:
-            # Upload from file
-            client.upload_file(args.file, args.content_type, args.permanent, args.path)
+    client = HosterClient()
+
+    if not args.cmd:
+        if sys.stdin.isatty():
+            HosterTUI(client).run()
         else:
-            print("Error: You must provide either a file, content with -c, or use --stdin")
+            parser.print_help()
+        return
+
+    if args.cmd == "ui":
+        HosterTUI(client).run()
+
+    elif args.cmd == "setup":
+        client.save_config(args.key, args.server, args.api_path)
+        ok, n = client.check_connection()
+        if ok:
+            _ok(f"Connected — {n} route(s) found.")
+        else:
+            _warn("Could not connect to server.")
+
+    elif args.cmd == "up":
+        tags = [t.strip() for t in args.tags.split(",")] if args.tags else []
+        custom_headers = _parse_headers(args.headers)
+        cd = args.content_disposition if hasattr(args, "content_disposition") else None
+
+        watch_mode = getattr(args, "watch", False) and args.file
+        if watch_mode and not args.path:
+            args.path = client._random_path()
+
+        if args.stdin:
+            content = sys.stdin.read()
+            client.upload_content(content, args.content_type, args.permanent,
+                                  args.path, tags, custom_headers=custom_headers)
+        elif args.content:
+            client.upload_content(args.content, args.content_type, args.permanent,
+                                  args.path, tags, custom_headers=custom_headers)
+        elif args.file:
+            if args.file_mode:
+                client.upload_file_binary(args.file, args.content_type, args.permanent,
+                                          args.path, tags, content_disposition=cd,
+                                          custom_headers=custom_headers)
+            elif args.force_base64:
+                client.upload_file_text(args.file, args.content_type, args.permanent,
+                                        args.path, tags, encoding="base64",
+                                        custom_headers=custom_headers)
+            elif args.force_hex:
+                client.upload_file_text(args.file, args.content_type, args.permanent,
+                                        args.path, tags, encoding="hex",
+                                        custom_headers=custom_headers)
+            else:
+
+                try:
+                    client.upload_file_text(args.file, args.content_type, args.permanent,
+                                            args.path, tags, encoding="text",
+                                            custom_headers=custom_headers)
+                except SystemExit:
+                    _info("Auto-switching to binary file mode…")
+                    client.upload_file_binary(args.file, args.content_type, args.permanent,
+                                              args.path, tags, content_disposition=cd,
+                                              custom_headers=custom_headers)
+        else:
+            _err("Provide a file path, -c content, or --stdin")
             sys.exit(1)
-    elif args.command == "ls":
-        client.list_routes()
-    elif args.command == "rm":
+
+        if watch_mode:
+            _info(f"Watching {args.file} for changes… (Ctrl+C to stop)")
+            rid, _ = client._require_route(args.path)
+            last_mtime = os.stat(args.file).st_mtime
+            encoding = "base64" if args.force_base64 else "hex" if args.force_hex else \
+                       "file" if args.file_mode else "text"
+            try:
+                while True:
+                    time.sleep(1)
+                    mtime = os.stat(args.file).st_mtime
+                    if mtime != last_mtime:
+                        last_mtime = mtime
+                        _info(f"Change detected — re-uploading {args.file}…")
+                        try:
+                            if encoding in ("base64", "file"):
+                                with open(args.file, "rb") as f:
+                                    new_content = base64.b64encode(f.read()).decode("ascii")
+                            elif encoding == "hex":
+                                with open(args.file, "rb") as f:
+                                    new_content = f.read().hex()
+                            else:
+                                with open(args.file, "r", encoding="utf-8") as f:
+                                    new_content = f.read()
+                            client._request("PUT", f"/routes/{rid}", {"content": new_content})
+                            _ok("Updated.")
+                        except Exception as e:
+                            _warn(f"Re-upload failed: {e}")
+            except KeyboardInterrupt:
+                _info("Watch stopped.")
+
+    elif args.cmd == "ls":
+        if getattr(args, "names_only", False):
+            routes = client.get_routes()
+            for r in routes:
+                print(r.get("name") or r.get("path", ""))
+        else:
+            client.list_routes(
+                tag=args.tag if hasattr(args, "tag") else None,
+                search=args.search if hasattr(args, "search") else None,
+            )
+
+    elif args.cmd == "rm":
         client.delete_route(args.route)
-    # La commande stats a été supprimée à la demande de l'utilisateur
-    elif args.command == "edit":
-        client.edit_route(args.route, args.content, args.file, args.name, args.category, args.content_type, args.path)
-    elif args.command == "url":
-        client.get_route_url(args.route)
-    elif args.command == "logs":
-        client.watch_logs()
+
+    elif args.cmd == "edit":
+        content = args.content
+        if args.file:
+            with open(args.file, "r") as f:
+                content = f.read()
+        custom_headers = _parse_headers(args.headers)
+        client.edit_route(
+            args.route,
+            content=content,
+            name=args.name,
+            category=args.category,
+            content_type=args.content_type,
+            path=args.path,
+            tags=args.tags,
+            content_disposition=args.content_disposition if hasattr(args, "content_disposition") else None,
+            customHeaders=custom_headers if custom_headers else None,
+        )
+
+    elif args.cmd == "url":
+        client.get_url(args.route)
+
+    elif args.cmd == "clone":
+        client.clone_route(args.route, args.path if hasattr(args, "path") else None)
+
+    elif args.cmd == "tag":
+        client.tag_route(args.route, args.tag)
+
+    elif args.cmd == "untag":
+        client.tag_route(args.route, args.tag, remove=True)
+
+    elif args.cmd == "cors":
+        client.set_cors(
+            args.route, args.origin, args.methods,
+            args.allow_headers if hasattr(args, "allow_headers") else None,
+            args.disable,
+        )
+
+    elif args.cmd == "headers":
+        client.set_headers(args.route, args.headers, replace=args.replace)
+
+    elif args.cmd == "test":
+        client.test_route(args.route, args.method, args.body, args.headers)
+
+    elif args.cmd == "export":
+        client.export_routes(args.output, args.password)
+
+    elif args.cmd == "import":
+        client.import_routes(args.input, args.password, args.overwrite)
+
+    elif args.cmd == "logs":
+        client.watch_logs(route_filter=getattr(args, "route", None))
+
+    elif args.cmd == "open":
+        _, info = client._require_route(args.route)
+        url = f"{client.server_url}{info['path']}"
+        _info(f"Opening {url}")
+        webbrowser.open(url)
+
+    elif args.cmd == "completion":
+        _print_completion(args.shell)
+
     else:
         parser.print_help()
 
