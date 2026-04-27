@@ -66,6 +66,28 @@ services:
       - frontend-builder
     restart: always
 
+  # MCP server — exposes Hoster features to AI agents (Model Context Protocol)
+  mcp:
+    build:
+      context: .
+      dockerfile: mcp/Dockerfile
+    container_name: hoster-mcp
+    working_dir: /app
+    ports:
+      - "${MCP_PORT:-3333}:3333"
+    environment:
+      - MCP_TRANSPORT=http
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=3333
+      - HOSTER_URL=http://backend:3000
+      - HOSTER_API_PATH=${API_PATH:-/api}
+      - HOSTER_API_KEY=${MCP_HOSTER_API_KEY:-}
+      - API_KEY=${API_KEY}
+      - MCP_AUTH_KEY=${MCP_AUTH_KEY:-}
+    depends_on:
+      - backend
+    restart: always
+
 volumes:
   mongodb_data:
     driver: local

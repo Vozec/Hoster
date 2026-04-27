@@ -164,6 +164,53 @@ curl http://localhost:3000/api/v1/routes \
 
 ---
 
+## Serveur MCP (pour les agents IA)
+
+Hoster embarque un serveur [MCP](https://modelcontextprotocol.io) qui expose toutes les fonctionnalités de la plateforme — création de routes, consultation des logs, édition CORS, import/export — directement aux agents IA (Claude, agents personnalisés, etc.).
+
+Le service tourne en sidecar lors d'un `docker compose up` sur `MCP_PORT` (défaut `3333`), accessible sur `http://localhost:3333/mcp` via le transport Streamable HTTP.
+
+**Outils exposés :** `list_routes`, `get_route`, `create_route`, `update_route`, `delete_route`, `delete_routes`, `clone_route`, `get_route_logs`, `get_logs`, `get_stats`, `get_cors_config`, `update_cors_config`, `get_custom_headers`, `update_custom_headers`, `export_routes`, `import_routes`.
+
+**Resources exposées :** `hoster://routes`, `hoster://routes/{id}`, `hoster://routes/{id}/logs`, `hoster://logs`, `hoster://stats`.
+
+### Configuration
+
+Dans `.env` :
+
+```ini
+MCP_PORT=3333
+# Défaut : première clé de API_KEY si vide
+MCP_HOSTER_API_KEY=
+# Bearer / X-API-Key exigé des clients HTTP du MCP (défaut : MCP_HOSTER_API_KEY)
+MCP_AUTH_KEY=
+```
+
+### Connecter Claude Desktop / un agent distant (HTTP)
+
+```json
+{
+  "mcpServers": {
+    "hoster": {
+      "url": "http://localhost:3333/mcp",
+      "headers": { "X-API-Key": "cle_api_1" }
+    }
+  }
+}
+```
+
+### Lancer en local en stdio
+
+```bash
+cd mcp && npm install
+HOSTER_URL=http://localhost:3000 \
+HOSTER_API_KEY=cle_api_1 \
+MCP_TRANSPORT=stdio \
+node src/server.js
+```
+
+---
+
 ## CLI
 
 ### Installation

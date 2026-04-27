@@ -13,6 +13,7 @@ const adminRoutes = require('./routes/admin');
 const apiRoutes = require('./routes/apiRoutes');
 const { router: dynamicRouter, refreshDynamicRoutes } = require('./routes/dynamic');
 const { authenticateToken } = require('./middlewares/auth');
+const adminAuth = require('./middlewares/adminAuth');
 const apiKeyAuth = require('./middlewares/apiKeyAuth');
 const { logRouteAccess } = require('./middlewares/logger');
 const evaluatePhp = require('./utils/phpEvaluator');
@@ -43,7 +44,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(morgan('dev'));
 
 app.use(API_PATH, indexRoutes);
-app.use(`${API_PATH}/admin`, authenticateToken, adminRoutes);
+app.use(`${API_PATH}/admin`, adminAuth, adminRoutes);
 app.use(`${API_PATH}/v1`, apiRoutes);
 
 app.use(ADMIN_PATH, express.static(path.join(__dirname, '../../frontend/build')));
